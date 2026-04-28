@@ -1,0 +1,60 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TrustPulse - connects to an EXISTING OpenEMR instance.
+# There is NO mock OpenEMR database. TrustPulse reads real OpenEMR audit logs.
+#
+# QUICK START (with the OpenEMR lab from the parent docker-compose):
+#   docker compose -f ../docker-compose.yml up -d          # start OpenEMR
+#   cp .env.example .env && edit .env                      # set credentials
+#   docker compose up -d                                   # start TrustPulse
+#
+# Environment variables (see .env.example):
+#   OPENEMR_DB_URL           - MySQL URL to OpenEMR DB (read-only user)
+#   TRUSTPULSE_DB_URL        - TrustPulse internal storage (SQLite default)
+#   TRUSTPULSE_MODE          - openemr_real (always)
+#   TRUSTPULSE_PATIENT_TOKEN_SECRET - HMAC secret for patient ID tokenization
+#   TRUSTPULSE_ADMIN_EMAIL   - initial admin email
+#   TRUSTPULSE_ADMIN_PASSWORD - initial admin password
+#   TRUSTPULSE_JWT_SECRET    - JWT signing key (change in production)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  trustpulse:
+    build: ./backend
+    container_name: trustpulse_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # ── OpenEMR connection (read-only DB user) ──────────────────────────────
+      OPENEMR_DB_URL:           "${OPENEMR_DB_URL:-mysql+pymysql://trustpulse_ro:readonly123@mariadb:3306/openemr}"
+      # ── TrustPulse internal DB ──────────────────────────────────────────────
+      TRUSTPULSE_DB_URL:        "${TRUSTPULSE_DB_URL:-sqlite:////app/data/trustpulse.db}"
+      TRUSTPULSE_MODE:          "openemr_real"
+      # ── Security ───────────────────────────────────────────────────────────
+      TRUSTPULSE_PATIENT_TOKEN_SECRET: "${TRUSTPULSE_PATIENT_TOKEN_SECRET:-change-me-patient-secret}"
+      TRUSTPULSE_JWT_SECRET:    "${TRUSTPULSE_JWT_SECRET:-change-me-jwt-secret}"
+      # ── Bootstrap admin ────────────────────────────────────────────────────
+      TRUSTPULSE_ADMIN_EMAIL:   "${TRUSTPULSE_ADMIN_EMAIL:-admin@trustpulse.local}"
+      TRUSTPULSE_ADMIN_PASSWORD: "${TRUSTPULSE_ADMIN_PASSWORD:-TrustPulse@2026!}"
+      # ── Optional ───────────────────────────────────────────────────────────
+      CLINIC_NAME:              "${CLINIC_NAME:-Demo Clinic}"
+      INGESTION_INTERVAL_SECONDS: "60"
+      # Demo write gate - ONLY set to true in a lab environment
+      TRUSTPULSE_ALLOW_OPENEMR_DEMO_WRITE: "${TRUSTPULSE_ALLOW_OPENEMR_DEMO_WRITE:-false}"
+    networks:
+      - default
+      - openemr_net        # join the OpenEMR network to reach MariaDB
+    volumes:
+      - trustpulse_data:/app/data
+      - ./frontend:/app/../frontend
+      - ./backend:/app
+
+networks:
+  openemr_net:
+    name: cyseopenemr_default
+    external: true         # created by the OpenEMR compose project
+
+volumes:
+  trustpulse_data:

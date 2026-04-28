@@ -1,0 +1,2368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrustPulse - Healthcare Governance Platform</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:#F1F5F9;color:#1E293B;overflow-x:hidden}
+.mono{font-family:'JetBrains Mono',monospace}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#94A3B8;border-radius:4px}
+.card{background:#fff;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);transition:box-shadow .2s}
+.card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1)}
+.nav-link{display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;cursor:pointer;font-size:13.5px;font-weight:500;color:#94A3B8;transition:all .15s;white-space:nowrap}
+.nav-link:hover{background:rgba(255,255,255,.06);color:#CBD5E1}
+.nav-link.active{background:rgba(99,102,241,.2);color:#A5B4FC}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.04em}
+.kpi-card{background:#fff;border-radius:14px;padding:20px 24px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.risk-track{background:#E2E8F0;border-radius:99px;height:6px;overflow:hidden;flex:1}
+.risk-fill{height:100%;border-radius:99px;transition:width .6s ease}
+.overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:40;backdrop-filter:blur(2px)}
+.drawer{position:fixed;right:0;top:0;bottom:0;width:560px;background:#fff;z-index:50;box-shadow:-6px 0 36px rgba(0,0,0,.15);display:flex;flex-direction:column;overflow:hidden}
+@media(max-width:640px){.drawer{width:100%}}
+.drawer-body{flex:1;overflow-y:auto;padding:24px}
+.fade{animation:fi .22s ease}
+@keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.slide{animation:sl .22s ease}
+@keyframes sl{from{transform:translateX(100%)}to{transform:translateX(0)}}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748B;border-bottom:2px solid #F1F5F9;white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid #F8FAFC;vertical-align:middle}
+tr.clickable:hover td{background:#F8FAFC;cursor:pointer}
+input,select{font-family:inherit;border:1.5px solid #E2E8F0;border-radius:8px;padding:8px 12px;font-size:13px;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s;color:#1E293B}
+input:focus,select:focus{border-color:#6366F1;box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+button{font-family:inherit;cursor:pointer}
+.btn-primary{background:#6366F1;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;transition:background .15s,transform .1s}
+.btn-primary:hover{background:#4F46E5}
+.btn-primary:active{transform:scale(.98)}
+.btn-secondary{background:#F1F5F9;color:#475569;border:1.5px solid #E2E8F0;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:500;transition:all .15s}
+.btn-secondary:hover{background:#E2E8F0;border-color:#CBD5E1}
+.btn-outline{background:transparent;color:#475569;border:1.5px solid #CBD5E1;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-outline:hover{background:#F1F5F9;border-color:#94A3B8}
+.section-header{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94A3B8;margin-bottom:12px}
+.chart-container{position:relative;width:100%}
+.tag{display:inline-block;padding:2px 7px;border-radius:5px;font-size:11px;font-weight:600;background:#EEF2FF;color:#4338CA}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo,useCallback} = React;
+
+// ─── Palette & utils ──────────────────────────────────────────────────────────
+const SEV = {
+  P0_CRITICAL:{bg:'#FEE2E2',text:'#991B1B',dot:'#DC2626',label:'P0 Critical',color:'#DC2626'},
+  P1_HIGH:    {bg:'#FFEDD5',text:'#9A3412',dot:'#EA580C',label:'P1 High',    color:'#EA580C'},
+  P2_MEDIUM:  {bg:'#FEF9C3',text:'#854D0E',dot:'#D97706',label:'P2 Medium',  color:'#D97706'},
+  P3_LOW:     {bg:'#DCFCE7',text:'#166534',dot:'#16A34A',label:'P3 Low',     color:'#16A34A'},
+};
+const PATTERN_LABEL = {
+  CREDENTIAL_RISK:'Credential Risk',INSIDER_SNOOPING:'Insider Snooping',
+  VOLUME_SPIKE:'Volume Spike',OFF_HOURS:'After-Hours',DATA_EXPORT:'Data Export',
+  CROSS_DEPT:'Cross-Department',CROSS_PATIENT:'Cross-Patient',
+};
+const PATTERN_COLOR = {
+  CREDENTIAL_RISK:'#7C3AED',INSIDER_SNOOPING:'#DC2626',VOLUME_SPIKE:'#2563EB',
+  OFF_HOURS:'#D97706',DATA_EXPORT:'#0891B2',CROSS_DEPT:'#DB2777',CROSS_PATIENT:'#059669',
+};
+const ROLE_COLOR = {Physician:'#0891B2',Nursing:'#7C3AED',Billing:'#D97706',Administration:'#6366F1',Other:'#6B7280'};
+const TRIAGE_COLOR = {TODAY:'#DC2626',THIS_WEEK:'#EA580C',BACKLOG:'#6366F1',SNOOZED:'#6B7280'};
+
+function inferRole(uid=''){
+  const u=uid.toLowerCase();
+  if(u.startsWith('dr_'))return 'Physician';
+  if(u.startsWith('nurse_'))return 'Nursing';
+  if(u.startsWith('billing_'))return 'Billing';
+  if(u.includes('admin')||u==='admin')return 'Administration';
+  return 'Other';
+}
+function backendRoleToDisplay(r=''){
+  return {clinician:'Physician',nurse:'Nursing',billing:'Billing',admin:'Administration',it:'Other',staff:'Other'}[r]||'Other';
+}
+const pLabel=p=>PATTERN_LABEL[p]||p;
+const fmtDate=d=>d?new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'-';
+const fmtTime=d=>d?new Date(d).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
+const fmtNum=n=>n==null?'-':Number(n).toLocaleString();
+
+// ─── Auth & API ───────────────────────────────────────────────────────────────
+const TOKEN_KEY='tp_token';
+const USER_KEY='tp_user';
+const getToken=()=>localStorage.getItem(TOKEN_KEY);
+const setToken=t=>t?localStorage.setItem(TOKEN_KEY,t):localStorage.removeItem(TOKEN_KEY);
+const getSavedUser=()=>{try{return JSON.parse(localStorage.getItem(USER_KEY)||'null')}catch{return null}};
+const saveUser=u=>u?localStorage.setItem(USER_KEY,JSON.stringify(u)):localStorage.removeItem(USER_KEY);
+
+async function apiFetch(path,{method='GET',body}={}){
+  const tok=getToken();
+  const res=await fetch(path,{
+    method,
+    headers:{'Content-Type':'application/json',...(tok?{Authorization:`Bearer ${tok}`}:{})},
+    ...(body?{body:JSON.stringify(body)}:{}),
+  });
+  if(res.status===401){setToken(null);saveUser(null);window.location.reload();return null}
+  if(!res.ok)throw new Error(await res.text());
+  return res.json();
+}
+
+// ─── Report view / PDF helpers ───────────────────────────────────────────────
+async function _fetchReportHtml(runId){
+  const res=await fetch(`/api/reports/history/${runId}`,{
+    headers:{Authorization:`Bearer ${getToken()}`},
+  });
+  if(res.status===401){setToken(null);window.location.reload();return null;}
+  if(!res.ok)throw new Error(await res.text());
+  return res.text();
+}
+
+async function viewReport(runId){
+  try{
+    const html=await _fetchReportHtml(runId);
+    if(!html)return;
+    window.open(URL.createObjectURL(new Blob([html],{type:'text/html'})),'_blank');
+  }catch(e){alert('Could not open report: '+e.message);}
+}
+
+async function downloadPdf(runId){
+  try{
+    const html=await _fetchReportHtml(runId);
+    if(!html)return;
+    const printHtml=html.replace('</head>',
+      '<style>@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>'+
+      '<script>window.addEventListener("load",function(){setTimeout(window.print,400)});<\/script></head>');
+    window.open(URL.createObjectURL(new Blob([printHtml],{type:'text/html'})),'_blank');
+  }catch(e){alert('Could not prepare PDF: '+e.message);}
+}
+
+// ─── Chart helpers ────────────────────────────────────────────────────────────
+const CHART_DEFAULTS={
+  plugins:{legend:{display:false},tooltip:{backgroundColor:'#1E293B',padding:10,cornerRadius:8,titleFont:{size:12,weight:'600'},bodyFont:{size:12}}},
+  animation:{duration:600},
+};
+
+function DonutChart({data,colors,labels,centerText}){
+  const ref=useRef(null),inst=useRef(null);
+  useEffect(()=>{
+    if(!ref.current||!data||data.every(v=>v===0))return;
+    inst.current?.destroy();
+    inst.current=new Chart(ref.current.getContext('2d'),{
+      type:'doughnut',
+      data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:2,borderColor:'#fff',hoverBorderWidth:0}]},
+      options:{...CHART_DEFAULTS,cutout:'68%',
+        plugins:{...CHART_DEFAULTS.plugins,
+          legend:{display:true,position:'bottom',labels:{boxWidth:10,boxHeight:10,padding:14,font:{size:12},color:'#475569'}},
+        }
+      },
+    });
+    return()=>{inst.current?.destroy();inst.current=null};
+  },[JSON.stringify(data)]);
+  return(
+    <div style={{position:'relative'}}>
+      <canvas ref={ref} height={220}/>
+      {centerText&&<div style={{position:'absolute',top:'38%',left:'50%',transform:'translate(-50%,-50%)',textAlign:'center',pointerEvents:'none'}}>
+        <div style={{fontSize:28,fontWeight:700,color:'#1E293B',lineHeight:1}}>{centerText.value}</div>
+        <div style={{fontSize:11,color:'#64748B',marginTop:2}}>{centerText.label}</div>
+      </div>}
+    </div>
+  );
+}
+
+function HBarChart({labels,values,colors,unit=''}){
+  const ref=useRef(null),inst=useRef(null);
+  useEffect(()=>{
+    if(!ref.current||!labels||labels.length===0)return;
+    inst.current?.destroy();
+    inst.current=new Chart(ref.current.getContext('2d'),{
+      type:'bar',
+      data:{labels,datasets:[{data:values,backgroundColor:colors||'#6366F1',borderRadius:6,barThickness:18}]},
+      options:{...CHART_DEFAULTS,indexAxis:'y',
+        scales:{
+          x:{grid:{color:'#F1F5F9'},ticks:{color:'#64748B',font:{size:11}},border:{display:false}},
+          y:{grid:{display:false},ticks:{color:'#334155',font:{size:12},crossAlign:'far'},border:{display:false}},
+        },
+        plugins:{...CHART_DEFAULTS.plugins,legend:{display:false},
+          tooltip:{...CHART_DEFAULTS.plugins.tooltip,callbacks:{label:ctx=>`${ctx.raw}${unit?` ${unit}`:''}`}}
+        },
+      },
+    });
+    return()=>{inst.current?.destroy();inst.current=null};
+  },[JSON.stringify({labels,values})]);
+  return <canvas ref={ref}/>;
+}
+
+function VBarChart({labels,values,colors,unit=''}){
+  const ref=useRef(null),inst=useRef(null);
+  useEffect(()=>{
+    if(!ref.current||!labels||labels.length===0)return;
+    inst.current?.destroy();
+    inst.current=new Chart(ref.current.getContext('2d'),{
+      type:'bar',
+      data:{labels,datasets:[{data:values,backgroundColor:colors||labels.map((_,i)=>`hsl(${220+i*30},70%,60%)`),borderRadius:7,barThickness:32}]},
+      options:{...CHART_DEFAULTS,
+        scales:{
+          x:{grid:{display:false},ticks:{color:'#334155',font:{size:12}},border:{display:false}},
+          y:{grid:{color:'#F1F5F9'},ticks:{color:'#64748B',font:{size:11}},border:{display:false}},
+        },
+        plugins:{...CHART_DEFAULTS.plugins,legend:{display:false},
+          tooltip:{...CHART_DEFAULTS.plugins.tooltip,callbacks:{label:ctx=>`${ctx.raw}${unit?` ${unit}`:''}`}}
+        },
+      },
+    });
+    return()=>{inst.current?.destroy();inst.current=null};
+  },[JSON.stringify({labels,values})]);
+  return <canvas ref={ref}/>;
+}
+
+function LineChart({labels,datasets}){
+  const ref=useRef(null),inst=useRef(null);
+  useEffect(()=>{
+    if(!ref.current||!labels||labels.length===0)return;
+    inst.current?.destroy();
+    inst.current=new Chart(ref.current.getContext('2d'),{
+      type:'line',
+      data:{labels,datasets:datasets.map(d=>({...d,tension:.4,pointRadius:4,pointHoverRadius:6,borderWidth:2.5,fill:d.fill!==undefined?d.fill:false}))},
+      options:{...CHART_DEFAULTS,
+        scales:{
+          x:{grid:{display:false},ticks:{color:'#64748B',font:{size:11}},border:{display:false},maxTicksLimit:8},
+          y:{grid:{color:'#F1F5F9'},ticks:{color:'#64748B',font:{size:11}},border:{display:false},beginAtZero:true},
+        },
+        plugins:{...CHART_DEFAULTS.plugins,
+          legend:{display:datasets.length>1,position:'bottom',labels:{boxWidth:10,boxHeight:10,padding:14,font:{size:12},color:'#475569'}},
+        },
+      },
+    });
+    return()=>{inst.current?.destroy();inst.current=null};
+  },[JSON.stringify({labels,datasets})]);
+  return <canvas ref={ref}/>;
+}
+
+function GroupedBarChart({labels,datasets}){
+  const ref=useRef(null),inst=useRef(null);
+  useEffect(()=>{
+    if(!ref.current||!labels||labels.length===0)return;
+    inst.current?.destroy();
+    inst.current=new Chart(ref.current.getContext('2d'),{
+      type:'bar',
+      data:{labels,datasets:datasets.map(d=>({...d,borderRadius:5,borderSkipped:false}))},
+      options:{...CHART_DEFAULTS,
+        scales:{
+          x:{grid:{display:false},ticks:{color:'#334155',font:{size:12}},border:{display:false}},
+          y:{grid:{color:'#F1F5F9'},ticks:{color:'#64748B',font:{size:11}},border:{display:false},beginAtZero:true},
+        },
+        plugins:{...CHART_DEFAULTS.plugins,
+          legend:{display:true,position:'bottom',labels:{boxWidth:10,boxHeight:10,padding:14,font:{size:12},color:'#475569'}},
+        },
+      },
+    });
+    return()=>{inst.current?.destroy();inst.current=null};
+  },[JSON.stringify({labels,datasets})]);
+  return <canvas ref={ref}/>;
+}
+
+// ─── UI Primitives ───────────────────────────────────────────────────────────
+function Badge({sev}){
+  const s=SEV[sev]||{bg:'#F1F5F9',text:'#475569',label:sev};
+  return <span className="badge" style={{background:s.bg,color:s.text}}>{s.label}</span>;
+}
+
+function PatternBadge({pattern}){
+  const color=PATTERN_COLOR[pattern]||'#6B7280';
+  return <span className="badge" style={{background:color+'18',color}}>{pLabel(pattern)}</span>;
+}
+
+function RoleBadge({role}){
+  const color=ROLE_COLOR[role]||'#6B7280';
+  return <span className="badge" style={{background:color+'18',color}}>{role}</span>;
+}
+
+function StatusDot({ok}){
+  return <span style={{width:8,height:8,borderRadius:'50%',background:ok?'#22C55E':'#EF4444',display:'inline-block',boxShadow:`0 0 0 3px ${ok?'#DCFCE7':'#FEE2E2'}`}}/>;
+}
+
+function RiskBar({score,color}){
+  const c=color||(score>=80?'#DC2626':score>=50?'#EA580C':score>=30?'#D97706':'#16A34A');
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:8}}>
+      <div className="risk-track"><div className="risk-fill" style={{width:`${Math.min(score,100)}%`,background:c}}/></div>
+      <span style={{fontSize:12,fontWeight:700,color:c,minWidth:28}}>{score}</span>
+    </div>
+  );
+}
+
+function KpiCard({icon,label,value,sub,color,trend,onClick}){
+  return(
+    <div className="kpi-card fade" onClick={onClick}
+      style={{cursor:onClick?'pointer':'default',transition:'box-shadow .2s,transform .15s'}}
+      onMouseEnter={e=>{if(onClick){e.currentTarget.style.boxShadow='0 8px 24px rgba(0,0,0,.13)';e.currentTarget.style.transform='translateY(-2px)'}}}
+      onMouseLeave={e=>{if(onClick){e.currentTarget.style.boxShadow='';e.currentTarget.style.transform=''}}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,fontWeight:600,color:'#64748B',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>{label}</div>
+          <div style={{fontSize:30,fontWeight:700,color:'#0F172A',lineHeight:1}}>{value}</div>
+          {sub&&<div style={{fontSize:12,color:'#94A3B8',marginTop:6}}>{sub}</div>}
+        </div>
+        <div style={{width:44,height:44,borderRadius:12,background:color+'18',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>
+          {icon}
+        </div>
+      </div>
+      {trend&&<div style={{marginTop:14,fontSize:11,fontWeight:600,color:trend>0?'#DC2626':'#16A34A'}}>
+        {trend>0?'↑':'↓'} {Math.abs(trend)} from last period
+      </div>}
+      {onClick&&<div style={{marginTop:12,fontSize:11,fontWeight:700,color:color,display:'flex',alignItems:'center',gap:3}}>
+        View details <span style={{fontSize:13}}>→</span>
+      </div>}
+    </div>
+  );
+}
+
+function ChartCard({title,subtitle,children,actions,onClick}){
+  return(
+    <div className="card" style={{padding:'20px 24px',cursor:onClick?'pointer':'default',transition:'box-shadow .2s,transform .15s'}}
+      onClick={onClick}
+      onMouseEnter={e=>{if(onClick){e.currentTarget.style.boxShadow='0 8px 24px rgba(0,0,0,.11)';e.currentTarget.style.transform='translateY(-1px)'}}}
+      onMouseLeave={e=>{if(onClick){e.currentTarget.style.boxShadow='';e.currentTarget.style.transform=''}}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18}}>
+        <div>
+          <div style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>{title}</div>
+          {subtitle&&<div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>{subtitle}</div>}
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          {actions&&<div>{actions}</div>}
+          {onClick&&<span style={{fontSize:12,fontWeight:700,color:'#6366F1',whiteSpace:'nowrap'}}>View all →</span>}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function EmptyChart({message='No data available'}){
+  return(
+    <div style={{height:180,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:8,color:'#94A3B8'}}>
+      <span style={{fontSize:28}}>📊</span>
+      <span style={{fontSize:13}}>{message}</span>
+    </div>
+  );
+}
+
+function Spinner(){
+  return(
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:'40px 0'}}>
+      <div style={{width:28,height:28,border:'3px solid #E2E8F0',borderTopColor:'#6366F1',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+}
+
+// ─── Sidebar ─────────────────────────────────────────────────────────────────
+const NAV=[
+  {key:'dashboard',icon:'⬡',label:'Dashboard'},
+  {key:'cases',    icon:'🗂',label:'Cases'},
+  {key:'employees',icon:'👥',label:'Employees'},
+  {key:'ingestion',icon:'⚡',label:'Ingestion'},
+  {key:'reports',  icon:'📄',label:'Reports'},
+  {key:'system',   icon:'🔌',label:'Connection'},
+];
+const ADMIN_NAV=[
+  {key:'admin_users',       icon:'👤',label:'Users'},
+  {key:'admin_permissions', icon:'🔐',label:'Permission Groups'},
+  {key:'admin_privacy',     icon:'🛡',label:'Data Privacy'},
+  {key:'admin_settings',    icon:'⚙️',label:'Settings'},
+];
+
+function Sidebar({page,setPage,user,onLogout,casesCount}){
+  const isAdmin=user?.role==='TRUSTPULSE_ADMIN';
+  return(
+    <aside style={{width:220,background:'#0F172A',display:'flex',flexDirection:'column',padding:'24px 12px',flexShrink:0,minHeight:'100vh',overflowY:'auto'}}>
+      <div style={{padding:'0 6px',marginBottom:32}}>
+        <div style={{fontSize:16,fontWeight:800,color:'#F8FAFC',letterSpacing:'-.01em'}}>TrustPulse</div>
+        <div style={{fontSize:10,color:'#475569',marginTop:2,letterSpacing:'.06em',textTransform:'uppercase'}}>Governance Platform</div>
+      </div>
+      <div style={{fontSize:10,fontWeight:700,color:'#334155',letterSpacing:'.1em',textTransform:'uppercase',padding:'0 10px',marginBottom:8}}>Navigation</div>
+      <nav style={{display:'flex',flexDirection:'column',gap:2}}>
+        {NAV.map(n=>(
+          <div key={n.key} className={`nav-link${page===n.key?' active':''}`} onClick={()=>setPage(n.key)}>
+            <span style={{fontSize:15}}>{n.icon}</span>
+            <span>{n.label}</span>
+            {n.key==='cases'&&casesCount>0&&(
+              <span style={{marginLeft:'auto',background:'#6366F1',color:'#fff',borderRadius:99,padding:'1px 7px',fontSize:10,fontWeight:700}}>{casesCount}</span>
+            )}
+          </div>
+        ))}
+      </nav>
+      {isAdmin&&(
+        <>
+          <div style={{fontSize:10,fontWeight:700,color:'#334155',letterSpacing:'.1em',textTransform:'uppercase',padding:'0 10px',marginTop:20,marginBottom:8}}>Administration</div>
+          <nav style={{display:'flex',flexDirection:'column',gap:2}}>
+            {ADMIN_NAV.map(n=>(
+              <div key={n.key} className={`nav-link${page===n.key?' active':''}`} onClick={()=>setPage(n.key)}>
+                <span style={{fontSize:15}}>{n.icon}</span>
+                <span>{n.label}</span>
+              </div>
+            ))}
+          </nav>
+        </>
+      )}
+      <div style={{flex:1}}/>
+      <div style={{borderTop:'1px solid #1E293B',paddingTop:16,marginTop:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,background:'rgba(255,255,255,.04)'}}>
+          <div style={{width:32,height:32,borderRadius:'50%',background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#fff',flexShrink:0}}>
+            {(user?.display_name||user?.email||'?')[0].toUpperCase()}
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:600,color:'#E2E8F0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user?.display_name||user?.email}</div>
+            <div style={{fontSize:10,color:'#64748B',marginTop:1}}>{user?.role?.replace(/_/g,' ')}</div>
+          </div>
+        </div>
+        <button className="nav-link" style={{width:'100%',marginTop:4,border:'none',background:'transparent'}} onClick={onLogout}>
+          <span>🚪</span><span>Sign out</span>
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+// ─── Header ───────────────────────────────────────────────────────────────────
+function Header({title,subtitle,connected}){
+  return(
+    <div style={{background:'#fff',borderBottom:'1px solid #E2E8F0',padding:'16px 28px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+      <div>
+        <h1 style={{fontSize:18,fontWeight:700,color:'#0F172A',lineHeight:1}}>{title}</h1>
+        {subtitle&&<p style={{fontSize:12,color:'#94A3B8',marginTop:3}}>{subtitle}</p>}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,fontWeight:600,color:connected?'#16A34A':'#DC2626'}}>
+        <StatusDot ok={connected}/>
+        OpenEMR {connected?'Connected':'Disconnected'}
+      </div>
+    </div>
+  );
+}
+
+// ─── Login Page ───────────────────────────────────────────────────────────────
+function LoginPage({onLogin}){
+  const [email,setEmail]=useState('admin@trustpulse.local');
+  const [pass,setPass]=useState('');
+  const [err,setErr]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  async function submit(e){
+    e.preventDefault();setErr('');setLoading(true);
+    try{
+      const data=await apiFetch('/api/auth/login',{method:'POST',body:{email,password:pass}});
+      if(data){onLogin(data.access_token,data.user)}
+    }catch(ex){setErr('Invalid email or password.')}
+    setLoading(false);
+  }
+  return(
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#0F172A 0%,#1E293B 50%,#0F172A 100%)'}}>
+      <div style={{width:420,padding:48,background:'#fff',borderRadius:20,boxShadow:'0 24px 80px rgba(0,0,0,.25)'}}>
+        <div style={{textAlign:'center',marginBottom:36}}>
+          <div style={{width:56,height:56,borderRadius:16,background:'#EEF2FF',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,margin:'0 auto 16px'}}>🛡️</div>
+          <h2 style={{fontSize:24,fontWeight:800,color:'#0F172A',letterSpacing:'-.02em'}}>TrustPulse</h2>
+          <p style={{fontSize:13,color:'#64748B',marginTop:6}}>Healthcare Governance Platform</p>
+        </div>
+        <form onSubmit={submit} style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div>
+            <label style={{fontSize:12,fontWeight:600,color:'#475569',display:'block',marginBottom:6}}>Email address</label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%'}} placeholder="admin@trustpulse.local" required/>
+          </div>
+          <div>
+            <label style={{fontSize:12,fontWeight:600,color:'#475569',display:'block',marginBottom:6}}>Password</label>
+            <input type="password" value={pass} onChange={e=>setPass(e.target.value)} style={{width:'100%'}} placeholder="••••••••" required/>
+          </div>
+          {err&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'10px 14px',fontSize:13,color:'#DC2626'}}>{err}</div>}
+          <button type="submit" className="btn-primary" style={{marginTop:4,padding:'12px 0',fontSize:14}} disabled={loading}>
+            {loading?'Signing in…':'Sign in'}
+          </button>
+        </form>
+        <div style={{marginTop:24,padding:'14px 16px',background:'#F8FAFC',borderRadius:10,border:'1px solid #E2E8F0'}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#64748B',marginBottom:8,textTransform:'uppercase',letterSpacing:'.05em'}}>Default credentials</div>
+          <div style={{fontSize:12,color:'#475569',display:'flex',flexDirection:'column',gap:4}}>
+            <span><b>Email:</b> admin@trustpulse.local</span>
+            <span><b>Password:</b> TrustPulse@2026!</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Case Drawer ──────────────────────────────────────────────────────────────
+function CaseDrawer({caseId,user,onClose,onDisposed}){
+  const [detail,setDetail]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [disposition,setDisposition]=useState('');
+  const [notes,setNotes]=useState('');
+  const [submitting,setSubmitting]=useState(false);
+  const [disposed,setDisposed]=useState(false);
+  const [reqReason,setReqReason]=useState('');
+  const [reqSubmitting,setReqSubmitting]=useState(false);
+  const [reqMsg,setReqMsg]=useState(null);
+  const [showReqForm,setShowReqForm]=useState(false);
+
+  useEffect(()=>{
+    if(!caseId)return;
+    setLoading(true);setDetail(null);setDisposed(false);setReqMsg(null);setShowReqForm(false);
+    apiFetch(`/api/cases/${caseId}`).then(d=>{setDetail(d);setLoading(false)}).catch(()=>setLoading(false));
+  },[caseId]);
+
+  async function submitAccessRequest(){
+    if(!reqReason.trim()){return;}
+    setReqSubmitting(true);
+    const r=await apiFetch('/api/privacy/request',{method:'POST',body:{reason:reqReason.trim()}});
+    setReqSubmitting(false);
+    if(r?.id){setReqMsg({m:'Request submitted - an admin will review it.',ok:true});setShowReqForm(false);setReqReason('');}
+    else if(r?.detail?.includes('pending')){setReqMsg({m:'You already have a pending request.',ok:false});}
+    else setReqMsg({m:'Failed to submit request.',ok:false});
+  }
+
+  async function submitDisposition(){
+    if(!disposition)return;
+    setSubmitting(true);
+    try{
+      await apiFetch(`/api/cases/${caseId}/disposition`,{method:'POST',body:{action:disposition,notes}});
+      const updated=await apiFetch(`/api/cases/${caseId}`);
+      setDetail(updated);
+      setDisposed(true);
+      onDisposed&&onDisposed(caseId);
+    }catch(e){
+      try{const j=JSON.parse(e.message);alert('Disposition failed: '+(j.detail||e.message));}
+      catch{alert('Disposition failed: '+e.message);}
+    }
+    setSubmitting(false);
+  }
+
+  const canDispose=user?.permissions?.includes('disposition');
+  const c=detail;
+
+  return(
+    <>
+      <div className="overlay" onClick={onClose}/>
+      <div className="drawer slide">
+        <div style={{padding:'20px 24px',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'.06em'}}>Case Detail</div>
+            {c&&<div style={{fontSize:13,fontWeight:600,color:'#475569',marginTop:2,fontFamily:'monospace'}}>{c.case_id?.slice(0,8)}…</div>}
+          </div>
+          <button onClick={onClose} style={{width:32,height:32,borderRadius:8,border:'1.5px solid #E2E8F0',background:'#fff',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#64748B'}}>×</button>
+        </div>
+        <div className="drawer-body">
+          {loading&&<Spinner/>}
+          {!loading&&!c&&<div style={{color:'#94A3B8',textAlign:'center',padding:'40px 0'}}>Case not found.</div>}
+          {c&&(
+            <div className="fade">
+              <div style={{marginBottom:20}}>
+                <h2 style={{fontSize:17,fontWeight:700,color:'#0F172A',lineHeight:1.4,marginBottom:12}}>{c.title}</h2>
+                <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}>
+                  <Badge sev={c.severity}/>
+                  <PatternBadge pattern={c.pattern_type}/>
+                  <RoleBadge role={inferRole(c.user_id)}/>
+                  {c.breach_risk&&<span className="badge" style={{background:'#FEE2E2',color:'#991B1B'}}>⚠ Breach Risk</span>}
+                  {c.is_demo&&<span className="badge" style={{background:'#E0E7FF',color:'#3730A3'}}>Demo</span>}
+                </div>
+              </div>
+
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:20}}>
+                {[
+                  {l:'User',v:`${c.user_name} (${c.user_id})`},
+                  {l:'Role',v:inferRole(c.user_id)},
+                  {l:'Events',v:fmtNum(c.event_count)},
+                  {l:'Risk Score',v:null,raw:<RiskBar score={c.risk_score}/>},
+                  {l:'Period',v:`${fmtDate(c.date_start)} – ${fmtDate(c.date_end)}`},
+                  {l:'Status',v:c.status},
+                  {l:'Triage',v:c.triage_bucket?.replace('_',' ')},
+                  {l:'Breach Deadline',v:c.breach_deadline?`${c.breach_days_remaining}d remaining`:'-'},
+                ].map(({l,v,raw})=>(
+                  <div key={l} style={{background:'#F8FAFC',borderRadius:10,padding:'12px 14px'}}>
+                    <div style={{fontSize:10,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:6}}>{l}</div>
+                    {raw||<div style={{fontSize:13,fontWeight:600,color:'#1E293B'}}>{v}</div>}
+                  </div>
+                ))}
+              </div>
+
+              {c.privacy_masked&&(
+                <div style={{background:'#EEF2FF',border:'1px solid #C7D2FE',borderRadius:10,padding:'12px 16px',marginBottom:20}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:700,color:'#4338CA',marginBottom:4}}>🛡 Data Privacy Active</div>
+                      <div style={{fontSize:12,color:'#4338CA',lineHeight:1.5}}>
+                        Fields masked: {(c.privacy_fields||[]).join(', ')}. Values appear as ●●●●●●●●. Request access to view actual values.
+                      </div>
+                      {reqMsg&&<div style={{marginTop:8,fontSize:12,fontWeight:600,color:reqMsg.ok?'#15803D':'#DC2626'}}>{reqMsg.m}</div>}
+                    </div>
+                    <button onClick={()=>setShowReqForm(s=>!s)} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #6366F1',background:showReqForm?'#6366F1':'transparent',color:showReqForm?'#fff':'#6366F1',cursor:'pointer',fontSize:12,fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>
+                      {showReqForm?'Cancel':'Request Access'}
+                    </button>
+                  </div>
+                  {showReqForm&&(
+                    <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #C7D2FE'}}>
+                      <textarea
+                        value={reqReason}
+                        onChange={e=>setReqReason(e.target.value)}
+                        placeholder="Reason for access (e.g. investigating potential breach in case - patient identity required for OCR report)…"
+                        rows={3}
+                        style={{width:'100%',border:'1.5px solid #C7D2FE',borderRadius:8,padding:'8px 12px',fontSize:12,resize:'vertical',fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}
+                      />
+                      <button className="btn-primary" style={{marginTop:8,fontSize:12}} onClick={submitAccessRequest} disabled={reqSubmitting||reqReason.trim().length<10}>
+                        {reqSubmitting?'Submitting…':'Submit Request'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {c.hipaa_provisions?.length>0&&(
+                <div style={{marginBottom:20}}>
+                  <div className="section-header">HIPAA Provisions</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                    {c.hipaa_provisions.map(p=><span key={p} className="tag">{p}</span>)}
+                  </div>
+                </div>
+              )}
+
+              {c.recommended_action&&(
+                <div style={{background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:10,padding:'12px 16px',marginBottom:20}}>
+                  <div style={{fontSize:10,fontWeight:700,color:'#9A3412',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:4}}>Recommended Action</div>
+                  <div style={{fontSize:13,fontWeight:600,color:'#7C2D12'}}>{c.recommended_action?.replace(/_/g,' ')}</div>
+                </div>
+              )}
+
+              {c.fired_rules?.length>0&&(
+                <div style={{marginBottom:20}}>
+                  <div className="section-header">Rules Fired</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    {c.fired_rules.map(r=>(
+                      <div key={r.rule_id} style={{border:`1px solid ${r.not_evaluated?'#E0E7FF':r.fired?'#FECACA':'#E2E8F0'}`,borderRadius:10,padding:'12px 14px',background:r.not_evaluated?'#EEF2FF':r.fired?'#FFF5F5':'#F8FAFC'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                          <span style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{r.rule_id} - {r.rule_name}</span>
+                          <div style={{display:'flex',gap:6}}>
+                            {r.not_evaluated&&<span className="badge" style={{background:'#EEF2FF',color:'#4338CA'}}>Not Evaluated</span>}
+                            {r.fired&&!r.not_evaluated&&<span className="badge" style={{background:'#FEE2E2',color:'#991B1B'}}>Fired</span>}
+                            {r.confidence&&<span className="badge" style={{background:'#F1F5F9',color:'#475569'}}>{r.confidence}</span>}
+                          </div>
+                        </div>
+                        <div style={{fontSize:12,color:'#475569'}}>{r.description}</div>
+                        {r.not_evaluated_reason&&<div style={{fontSize:11,color:'#6366F1',marginTop:4}}>ℹ {r.not_evaluated_reason}</div>}
+                        {r.limitations?.length>0&&<div style={{fontSize:11,color:'#94A3B8',marginTop:4}}>Limitations: {r.limitations.join(' · ')}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {c.action_history?.length>0&&(
+                <div style={{marginBottom:20}}>
+                  <div className="section-header">Action History</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {c.action_history.map((a,i)=>(
+                      <div key={i} style={{borderLeft:'3px solid #6366F1',paddingLeft:12,paddingBottom:8}}>
+                        <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:3}}>
+                          <span style={{fontSize:12,fontWeight:700,color:'#1E293B'}}>{a.action}</span>
+                          <span style={{fontSize:11,color:'#94A3B8'}}>{fmtTime(a.created_at)}</span>
+                        </div>
+                        <div style={{fontSize:11,color:'#64748B'}}>{a.actor_email||'unknown'} ({a.actor_role})</div>
+                        {(a.previous_status||a.new_status)&&<div style={{fontSize:11,color:'#94A3B8',marginTop:2}}>{a.previous_status||'?'} → {a.new_status||'?'}</div>}
+                        {a.notes&&<div style={{fontSize:11,color:'#475569',marginTop:3,fontStyle:'italic'}}>{a.notes}</div>}
+                        <div style={{fontSize:10,color:'#CBD5E1',marginTop:4,fontFamily:'monospace'}}>{a.record_hash?.slice(0,24)}…</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {canDispose&&!disposed&&['OPEN','FOLLOW_UP','ESCALATED'].includes(c.status)&&(
+                <div style={{border:'1.5px solid #E2E8F0',borderRadius:12,padding:'16px 18px',marginBottom:20}}>
+                  <div className="section-header">Record Disposition</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                    <select value={disposition} onChange={e=>setDisposition(e.target.value)} style={{width:'100%'}}>
+                      <option value="">Select action…</option>
+                      <option value="REVIEWED">Reviewed - no further action</option>
+                      <option value="ESCALATED">Escalated to supervisor</option>
+                      <option value="DISMISSED">Dismissed</option>
+                      <option value="FOLLOW_UP">Follow up required</option>
+                      <option value="FALSE_POSITIVE">False positive</option>
+                    </select>
+                    <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder={['DISMISSED','FALSE_POSITIVE','ESCALATED','FOLLOW_UP'].includes(disposition)?'Notes (required for this action)…':'Notes (optional)…'} rows={3} style={{width:'100%',border:'1.5px solid #E2E8F0',borderRadius:8,padding:'8px 12px',fontSize:13,resize:'vertical',fontFamily:'inherit',outline:'none'}}/>
+                    <button className="btn-primary" onClick={submitDisposition} disabled={!disposition||submitting}>
+                      {submitting?'Saving…':'Record Disposition'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {disposed&&<div style={{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:10,padding:'12px 16px',marginBottom:20,fontSize:13,color:'#166534',fontWeight:600}}>✓ Disposition recorded</div>}
+
+              <div>
+                <button className="btn-secondary" style={{cursor:'pointer'}} onClick={async()=>{
+                  const res=await fetch(`/api/evidence/${caseId}`,{headers:{Authorization:`Bearer ${getToken()}`}});
+                  if(!res.ok){alert(`Evidence export failed: ${await res.text()}`);return;}
+                  const html=await res.text();
+                  const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));
+                  window.open(url,'_blank');
+                }}>
+                  📄 Export Evidence Package
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Dashboard Page ───────────────────────────────────────────────────────────
+function DashboardPage({cases,ingestion,system,setPage}){
+  const total=cases.length;
+  const openCases=useMemo(()=>cases.filter(c=>c.status==='OPEN'),[cases]);
+  const critical=useMemo(()=>openCases.filter(c=>c.severity==='P0_CRITICAL'),[openCases]);
+  const breach=useMemo(()=>openCases.filter(c=>c.breach_risk),[openCases]);
+  const users=useMemo(()=>new Set(openCases.map(c=>c.user_id)).size,[openCases]);
+  const eventsStored=ingestion?.total_events_stored||0;
+
+  // Severity breakdown
+  const sevCounts=useMemo(()=>{
+    const m={P0_CRITICAL:0,P1_HIGH:0,P2_MEDIUM:0,P3_LOW:0};
+    openCases.forEach(c=>m[c.severity]=(m[c.severity]||0)+1);
+    return m;
+  },[openCases]);
+
+  // Pattern breakdown
+  const patternCounts=useMemo(()=>{
+    const m={};openCases.forEach(c=>{m[c.pattern_type]=(m[c.pattern_type]||0)+1});
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+  },[openCases]);
+
+  // Top users by max risk
+  const userRisk=useMemo(()=>{
+    const m={};
+    openCases.forEach(c=>{if(!m[c.user_name]||c.risk_score>m[c.user_name])m[c.user_name]=c.risk_score});
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  },[openCases]);
+
+  // Triage bucket
+  const triageCounts=useMemo(()=>{
+    const m={TODAY:0,THIS_WEEK:0,BACKLOG:0};
+    openCases.forEach(c=>{m[c.triage_bucket]=(m[c.triage_bucket]||0)+1});
+    return m;
+  },[openCases]);
+
+  // Role breakdown
+  const roleCounts=useMemo(()=>{
+    const m={};
+    openCases.forEach(c=>{const r=inferRole(c.user_id);m[r]=(m[r]||0)+1});
+    return m;
+  },[openCases]);
+
+  // Cases by role + severity (grouped bar)
+  const roles=Object.keys(ROLE_COLOR);
+  const severities=['P0_CRITICAL','P1_HIGH','P2_MEDIUM','P3_LOW'];
+  const roleSevData=useMemo(()=>{
+    const m={};
+    severities.forEach(s=>{ m[s]={};roles.forEach(r=>{m[s][r]=0}) });
+    openCases.forEach(c=>{
+      const r=inferRole(c.user_id);
+      if(m[c.severity])m[c.severity][r]=(m[c.severity][r]||0)+1;
+    });
+    return m;
+  },[openCases]);
+
+  // Ingestion timeline
+  const manifests=useMemo(()=>
+    [...(ingestion?.manifests||[])].reverse().slice(-12)
+  ,[ingestion]);
+
+  const connected=system?.openemr_connection?.connected||false;
+
+  return(
+    <div className="fade" style={{padding:28,overflow:'auto',flex:1}}>
+      {/* KPI Row */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:16,marginBottom:24}}>
+        <KpiCard icon="📋" label="Events Ingested" value={fmtNum(eventsStored)} color="#6366F1"
+          onClick={()=>setPage('ingestion')}/>
+        <KpiCard icon="🗂" label="Open Cases" value={fmtNum(openCases.length)} color="#2563EB"
+          onClick={()=>setPage('cases')}/>
+        <KpiCard icon="🔴" label="P0 Critical" value={fmtNum(critical.length)} color="#DC2626"
+          onClick={()=>setPage('cases')}/>
+        <KpiCard icon="⚠️" label="Breach Risk" value={fmtNum(breach.length)} color="#EA580C"
+          onClick={()=>setPage('cases')}/>
+        <KpiCard icon="👥" label="Users Under Review" value={fmtNum(users)} color="#7C3AED"
+          onClick={()=>setPage('employees')}/>
+      </div>
+
+      {/* Row 2: Severity + Pattern */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1.6fr',gap:16,marginBottom:16}}>
+        <ChartCard title="Cases by Severity" subtitle="Open cases breakdown" onClick={()=>setPage('cases')}>
+          {openCases.length>0
+            ?<DonutChart
+               labels={['P0 Critical','P1 High','P2 Medium','P3 Low']}
+               data={[sevCounts.P0_CRITICAL,sevCounts.P1_HIGH,sevCounts.P2_MEDIUM,sevCounts.P3_LOW]}
+               colors={['#DC2626','#EA580C','#D97706','#16A34A']}
+               centerText={{value:openCases.length,label:'Open Cases'}}/>
+            :<EmptyChart message="No open cases"/>}
+        </ChartCard>
+        <ChartCard title="Cases by Pattern Type" subtitle="Distribution of detected risk patterns" onClick={()=>setPage('cases')}>
+          {patternCounts.length>0
+            ?<VBarChart
+               labels={patternCounts.map(([p])=>pLabel(p))}
+               values={patternCounts.map(([,v])=>v)}
+               colors={patternCounts.map(([p])=>PATTERN_COLOR[p]||'#6B7280')}/>
+            :<EmptyChart message="No pattern data"/>}
+        </ChartCard>
+      </div>
+
+      {/* Row 3: User Risk + Triage */}
+      <div style={{display:'grid',gridTemplateColumns:'1.6fr 1fr',gap:16,marginBottom:16}}>
+        <ChartCard title="Top Users by Max Risk Score" subtitle="Highest risk scores per employee" onClick={()=>setPage('employees')}>
+          {userRisk.length>0
+            ?<HBarChart
+               labels={userRisk.map(([name])=>name)}
+               values={userRisk.map(([,score])=>score)}
+               colors={userRisk.map(([,score])=>score>=80?'#DC2626':score>=50?'#EA580C':score>=30?'#D97706':'#16A34A')}
+               unit="pts"/>
+            :<EmptyChart message="No user risk data"/>}
+        </ChartCard>
+        <ChartCard title="Cases by Triage Bucket" subtitle="Urgency classification" onClick={()=>setPage('cases')}>
+          {openCases.length>0
+            ?<VBarChart
+               labels={['Today','This Week','Backlog']}
+               values={[triageCounts.TODAY,triageCounts.THIS_WEEK,triageCounts.BACKLOG]}
+               colors={['#DC2626','#EA580C','#6366F1']}/>
+            :<EmptyChart/>}
+        </ChartCard>
+      </div>
+
+      {/* Row 4: Role×Severity grouped bar + Ingestion timeline */}
+      <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:16,marginBottom:16}}>
+        <ChartCard title="Cases by Role Group &amp; Severity" subtitle="Grouped breakdown by department" onClick={()=>setPage('cases')}>
+          {openCases.length>0
+            ?<GroupedBarChart
+               labels={roles.filter(r=>roleCounts[r]>0)}
+               datasets={severities.map(s=>({
+                 label:SEV[s].label,
+                 data:roles.filter(r=>roleCounts[r]>0).map(r=>roleSevData[s][r]||0),
+                 backgroundColor:SEV[s].color,
+               }))}/>
+            :<EmptyChart/>}
+        </ChartCard>
+        <ChartCard title="Role Distribution" subtitle="Cases by department" onClick={()=>setPage('employees')}>
+          {openCases.length>0
+            ?<DonutChart
+               labels={Object.keys(roleCounts)}
+               data={Object.values(roleCounts)}
+               colors={Object.keys(roleCounts).map(r=>ROLE_COLOR[r]||'#6B7280')}
+               centerText={{value:Object.keys(roleCounts).length,label:'Departments'}}/>
+            :<EmptyChart/>}
+        </ChartCard>
+      </div>
+
+      {/* Row 5: Ingestion timeline */}
+      <ChartCard title="Ingestion Timeline" subtitle="Events processed per ingestion run" onClick={()=>setPage('ingestion')}>
+        {manifests.length>0
+          ?<LineChart
+             labels={manifests.map(m=>fmtTime(m.started_at))}
+             datasets={[{
+               label:'Events Ingested',
+               data:manifests.map(m=>m.inserted_count||0),
+               borderColor:'#6366F1',
+               backgroundColor:'rgba(99,102,241,.1)',
+               fill:true,
+             },{
+               label:'Source Rows',
+               data:manifests.map(m=>m.source_row_count||0),
+               borderColor:'#0891B2',
+               backgroundColor:'transparent',
+             }]}/>
+          :<EmptyChart message="No ingestion runs yet"/>}
+      </ChartCard>
+    </div>
+  );
+}
+
+// ─── Cases Page ───────────────────────────────────────────────────────────────
+function CasesPage({cases,user,onCaseClick}){
+  const [search,setSearch]=useState('');
+  const [sevFilter,setSevFilter]=useState('');
+  const [patFilter,setPatFilter]=useState('');
+  const [triageFilter,setTriageFilter]=useState('');
+  const [statusFilter,setStatusFilter]=useState('OPEN');
+  const [groupBy,setGroupBy]=useState('none');
+  const [sortBy,setSortBy]=useState('risk_score');
+  const [sortDir,setSortDir]=useState('desc');
+
+  const filtered=useMemo(()=>{
+    let c=[...cases];
+    if(search)c=c.filter(x=>(x.user_name||'').toLowerCase().includes(search.toLowerCase())||(x.title||'').toLowerCase().includes(search.toLowerCase()));
+    if(sevFilter)c=c.filter(x=>x.severity===sevFilter);
+    if(patFilter)c=c.filter(x=>x.pattern_type===patFilter);
+    if(triageFilter)c=c.filter(x=>x.triage_bucket===triageFilter);
+    if(statusFilter)c=c.filter(x=>x.status===statusFilter);
+    c.sort((a,b)=>{
+      let av=a[sortBy],bv=b[sortBy];
+      if(typeof av==='string')av=av.toLowerCase(),bv=bv.toLowerCase();
+      return sortDir==='asc'?av>bv?1:-1:av<bv?1:-1;
+    });
+    return c;
+  },[cases,search,sevFilter,patFilter,triageFilter,statusFilter,sortBy,sortDir]);
+
+  const grouped=useMemo(()=>{
+    if(groupBy==='none')return[{key:'All Cases',items:filtered}];
+    const m={};
+    filtered.forEach(c=>{
+      const k=groupBy==='role'?inferRole(c.user_id):groupBy==='severity'?c.severity:groupBy==='pattern'?c.pattern_type:groupBy==='user'?c.user_name:c.triage_bucket;
+      if(!m[k])m[k]=[];m[k].push(c);
+    });
+    return Object.entries(m).sort((a,b)=>b[1].length-a[1].length).map(([key,items])=>({key,items}));
+  },[filtered,groupBy]);
+
+  function toggleSort(col){
+    if(sortBy===col)setSortDir(d=>d==='asc'?'desc':'asc');
+    else{setSortBy(col);setSortDir('desc');}
+  }
+  function SortIcon({col}){return<span style={{color:sortBy===col?'#6366F1':'#CBD5E1',marginLeft:4,fontSize:10}}>{sortDir==='asc'&&sortBy===col?'▲':'▼'}</span>}
+
+  const patterns=[...new Set(cases.map(c=>c.pattern_type))];
+
+  return(
+    <div className="fade" style={{padding:28,overflow:'auto',flex:1}}>
+      {/* Filters */}
+      <div className="card" style={{padding:'16px 20px',marginBottom:20}}>
+        <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Search by name or title…" style={{width:240}}/>
+          <select value={sevFilter} onChange={e=>setSevFilter(e.target.value)} style={{minWidth:140}}>
+            <option value="">All Severities</option>
+            {Object.entries(SEV).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <select value={patFilter} onChange={e=>setPatFilter(e.target.value)} style={{minWidth:160}}>
+            <option value="">All Patterns</option>
+            {patterns.map(p=><option key={p} value={p}>{pLabel(p)}</option>)}
+          </select>
+          <select value={triageFilter} onChange={e=>setTriageFilter(e.target.value)} style={{minWidth:130}}>
+            <option value="">All Triage</option>
+            {['TODAY','THIS_WEEK','BACKLOG'].map(t=><option key={t} value={t}>{t.replace('_',' ')}</option>)}
+          </select>
+          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{minWidth:120}}>
+            <option value="">All Status</option>
+            <option value="OPEN">Open</option>
+            <option value="CLOSED">Closed</option>
+            <option value="SNOOZED">Snoozed</option>
+          </select>
+          <div style={{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}}>
+            <span style={{fontSize:12,color:'#64748B',fontWeight:600}}>Group by:</span>
+            {['none','role','severity','pattern','user'].map(g=>(
+              <button key={g} onClick={()=>setGroupBy(g)} style={{padding:'6px 12px',borderRadius:7,border:'1.5px solid #E2E8F0',background:groupBy===g?'#6366F1':'#fff',color:groupBy===g?'#fff':'#64748B',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s'}}>
+                {g==='none'?'None':g.charAt(0).toUpperCase()+g.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{marginTop:10,fontSize:12,color:'#94A3B8'}}>{filtered.length} case{filtered.length!==1?'s':''} shown</div>
+      </div>
+
+      {grouped.map(({key,items})=>(
+        <div key={key} style={{marginBottom:20}}>
+          {groupBy!=='none'&&(
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#0F172A'}}>{groupBy==='severity'?<Badge sev={key}/>:groupBy==='role'?<RoleBadge role={key}/>:key}</div>
+              <span style={{fontSize:12,color:'#94A3B8'}}>{items.length} cases</span>
+            </div>
+          )}
+          <div className="card" style={{overflow:'hidden'}}>
+            <div style={{overflowX:'auto'}}>
+              <table>
+                <thead>
+                  <tr>
+                    <th onClick={()=>toggleSort('title')} style={{cursor:'pointer'}}>Title<SortIcon col="title"/></th>
+                    <th>Severity</th>
+                    <th>Pattern</th>
+                    <th onClick={()=>toggleSort('user_name')} style={{cursor:'pointer'}}>Employee<SortIcon col="user_name"/></th>
+                    <th>Role</th>
+                    <th onClick={()=>toggleSort('risk_score')} style={{cursor:'pointer'}}>Risk<SortIcon col="risk_score"/></th>
+                    <th onClick={()=>toggleSort('event_count')} style={{cursor:'pointer'}}>Events<SortIcon col="event_count"/></th>
+                    <th>Triage</th>
+                    <th>Breach</th>
+                    <th onClick={()=>toggleSort('created_at')} style={{cursor:'pointer'}}>Created<SortIcon col="created_at"/></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(c=>(
+                    <tr key={c.case_id} className="clickable" onClick={()=>onCaseClick(c.case_id)}>
+                      <td style={{maxWidth:200}}>
+                        <div style={{fontSize:13,fontWeight:600,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.title}</div>
+                        <div style={{fontSize:11,color:'#94A3B8',marginTop:2,fontFamily:'monospace'}}>{c.case_id?.slice(0,12)}…</div>
+                      </td>
+                      <td><Badge sev={c.severity}/></td>
+                      <td><PatternBadge pattern={c.pattern_type}/></td>
+                      <td>
+                        <div style={{fontSize:13,fontWeight:600,color:'#1E293B'}}>{c.user_name}</div>
+                        <div style={{fontSize:11,color:'#94A3B8'}}>{c.user_id}</div>
+                      </td>
+                      <td><RoleBadge role={inferRole(c.user_id)}/></td>
+                      <td style={{minWidth:120}}><RiskBar score={c.risk_score}/></td>
+                      <td style={{fontWeight:600,color:'#475569'}}>{fmtNum(c.event_count)}</td>
+                      <td><span className="badge" style={{background:TRIAGE_COLOR[c.triage_bucket]+'18',color:TRIAGE_COLOR[c.triage_bucket]||'#475569'}}>{c.triage_bucket?.replace('_',' ')}</span></td>
+                      <td>{c.breach_risk?<span style={{color:'#DC2626',fontWeight:700,fontSize:13}}>⚠ Yes</span>:<span style={{color:'#94A3B8',fontSize:13}}>-</span>}</td>
+                      <td style={{fontSize:12,color:'#64748B',whiteSpace:'nowrap'}}>{fmtDate(c.created_at)}</td>
+                    </tr>
+                  ))}
+                  {items.length===0&&(
+                    <tr><td colSpan={10} style={{textAlign:'center',padding:'32px 0',color:'#94A3B8',fontSize:13}}>No cases match the current filters.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Employees Page ───────────────────────────────────────────────────────────
+function EmployeesPage({cases,users}){
+  const [selectedRole,setSelectedRole]=useState('');
+
+  const userMap=useMemo(()=>{
+    const m={};(users||[]).forEach(u=>{m[u.user_id]=u;});return m;
+  },[users]);
+
+  const employees=useMemo(()=>{
+    const m={};
+    // Seed all roster users first (even those with no cases yet)
+    (users||[]).forEach(u=>{
+      m[u.user_id]={user_id:u.user_id,user_name:u.user_name||u.user_id,role:backendRoleToDisplay(u.role),cases:[],maxRisk:0};
+    });
+    cases.forEach(c=>{
+      const apiUser=userMap[c.user_id];
+      const role=apiUser?backendRoleToDisplay(apiUser.role):inferRole(c.user_id);
+      const name=apiUser?.user_name||c.user_name||c.user_id;
+      if(!m[c.user_id])m[c.user_id]={user_id:c.user_id,user_name:name,role,cases:[],maxRisk:0};
+      m[c.user_id].cases.push(c);
+      if(c.risk_score>m[c.user_id].maxRisk)m[c.user_id].maxRisk=c.risk_score;
+    });
+    return Object.values(m).sort((a,b)=>b.maxRisk-a.maxRisk);
+  },[cases,users,userMap]);
+
+  const roles=['Physician','Nursing','Billing','Administration','Other'];
+  const filtered=selectedRole?employees.filter(e=>e.role===selectedRole):employees;
+
+  function EmployeeCard({emp}){
+    const openCases=emp.cases.filter(c=>c.status==='OPEN');
+    const criticalCount=openCases.filter(c=>c.severity==='P0_CRITICAL').length;
+    const breachCount=openCases.filter(c=>c.breach_risk).length;
+    const patterns=[...new Set(openCases.map(c=>c.pattern_type))];
+    const riskColor=emp.maxRisk>=80?'#DC2626':emp.maxRisk>=50?'#EA580C':emp.maxRisk>=30?'#D97706':'#16A34A';
+
+    return(
+      <div className="card" style={{padding:'18px 20px'}}>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{width:40,height:40,borderRadius:12,background:ROLE_COLOR[emp.role]+'20',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,color:ROLE_COLOR[emp.role]}}>
+              {emp.user_name?.[0]||'?'}
+            </div>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:'#0F172A'}}>{emp.user_name}</div>
+              <div style={{fontSize:11,color:'#94A3B8',marginTop:2}}>{emp.user_id}</div>
+            </div>
+          </div>
+          <RoleBadge role={emp.role}/>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+            <span style={{fontSize:11,color:'#64748B',fontWeight:600}}>Max Risk Score</span>
+            <span style={{fontSize:12,fontWeight:700,color:riskColor}}>{emp.maxRisk}</span>
+          </div>
+          <RiskBar score={emp.maxRisk} color={riskColor}/>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12}}>
+          {[{l:'Open Cases',v:openCases.length,c:'#1E293B'},{l:'Critical',v:criticalCount,c:'#DC2626'},{l:'Breach Risk',v:breachCount,c:'#EA580C'}].map(({l,v,c})=>(
+            <div key={l} style={{background:'#F8FAFC',borderRadius:8,padding:'8px 10px',textAlign:'center'}}>
+              <div style={{fontSize:18,fontWeight:800,color:v>0?c:'#CBD5E1'}}>{v}</div>
+              <div style={{fontSize:10,color:'#94A3B8',marginTop:2}}>{l}</div>
+            </div>
+          ))}
+        </div>
+        {patterns.length>0&&(
+          <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+            {patterns.map(p=><PatternBadge key={p} pattern={p}/>)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const roleCounts=useMemo(()=>{
+    const m={};employees.forEach(e=>m[e.role]=(m[e.role]||0)+1);return m;
+  },[employees]);
+
+  return(
+    <div className="fade" style={{padding:28,overflow:'auto',flex:1}}>
+      {/* Role tabs */}
+      <div style={{display:'flex',gap:8,marginBottom:24,flexWrap:'wrap'}}>
+        {['', ...roles.filter(r=>roleCounts[r])].map(r=>(
+          <button key={r} onClick={()=>setSelectedRole(r)} style={{padding:'8px 16px',borderRadius:8,border:'1.5px solid #E2E8F0',background:selectedRole===r?'#6366F1':'#fff',color:selectedRole===r?'#fff':'#475569',fontSize:13,fontWeight:600,cursor:'pointer',transition:'all .15s'}}>
+            {r||'All Departments'} {r?`(${roleCounts[r]||0})`:''}{!r?` (${employees.length})`:''}</button>
+        ))}
+      </div>
+
+      {/* Role sections */}
+      {(selectedRole?[selectedRole]:roles.filter(r=>roleCounts[r])).map(role=>{
+        const emps=filtered.filter(e=>e.role===role);
+        if(!emps.length)return null;
+        return(
+          <div key={role} style={{marginBottom:28}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+              <div style={{width:6,height:24,borderRadius:3,background:ROLE_COLOR[role]}}/>
+              <h2 style={{fontSize:15,fontWeight:700,color:'#0F172A'}}>{role}</h2>
+              <span style={{fontSize:12,color:'#94A3B8'}}>{emps.length} employee{emps.length!==1?'s':''}</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14}}>
+              {emps.map(e=><EmployeeCard key={e.user_id} emp={e}/>)}
+            </div>
+          </div>
+        );
+      })}
+      {filtered.length===0&&(
+        <div style={{textAlign:'center',padding:'60px 0',color:'#94A3B8'}}>
+          <div style={{fontSize:36,marginBottom:12}}>👥</div>
+          <div style={{fontSize:14}}>No employees found for this filter.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Ingestion Page ───────────────────────────────────────────────────────────
+function IngestionPage({ingestion,onRefresh}){
+  const manifests=ingestion?.manifests||[];
+  const total=ingestion?.total_events_stored||0;
+  const errors=ingestion?.total_parse_errors||0;
+  const status=ingestion?.overall_status||'UNKNOWN';
+  const statusColor={OK:'#16A34A',GAP_DETECTED:'#EA580C',PARSER_ERRORS:'#DC2626',SOURCE_UNREACHABLE:'#DC2626',UNKNOWN:'#94A3B8'}[status]||'#94A3B8';
+
+  const timeline=useMemo(()=>[...manifests].reverse().slice(-20),[manifests]);
+
+  return(
+    <div className="fade" style={{padding:28,overflow:'auto',flex:1}}>
+      {/* Status row */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>
+        <KpiCard icon="⚡" label="Ingestion Status" value={status} sub="" color={statusColor}/>
+        <KpiCard icon="📦" label="Total Events" value={fmtNum(total)} color="#6366F1"/>
+        <KpiCard icon="❌" label="Parse Errors" value={fmtNum(errors)} color={errors>0?'#DC2626':'#16A34A'}/>
+        <KpiCard icon="🔄" label="Total Runs" value={fmtNum(manifests.length)} color="#0891B2"/>
+      </div>
+
+      {/* Hashes */}
+      {(ingestion?.last_success_hash||ingestion?.last_source_hash)&&(
+        <div className="card" style={{padding:'16px 20px',marginBottom:20}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+            {[{l:'Last Manifest Hash',v:ingestion?.last_success_hash},{l:'Last Source Batch Hash',v:ingestion?.last_source_hash}].map(({l,v})=>(
+              <div key={l}>
+                <div style={{fontSize:11,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:6}}>{l}</div>
+                <div className="mono" style={{fontSize:12,color:'#475569',wordBreak:'break-all',background:'#F8FAFC',padding:'8px 12px',borderRadius:8,border:'1px solid #E2E8F0'}}>{v||'-'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Timeline chart */}
+      <ChartCard title="Ingestion Activity" subtitle="Events ingested per run" actions={<button className="btn-secondary" onClick={onRefresh} style={{fontSize:12,padding:'6px 12px'}}>↻ Refresh</button>} >
+        {timeline.length>0
+          ?<LineChart
+             labels={timeline.map(m=>fmtTime(m.started_at))}
+             datasets={[{
+               label:'Rows Inserted',
+               data:timeline.map(m=>m.inserted_count||0),
+               borderColor:'#6366F1',backgroundColor:'rgba(99,102,241,.08)',fill:true,
+             },{
+               label:'Duplicates Skipped',
+               data:timeline.map(m=>m.duplicate_count||0),
+               borderColor:'#94A3B8',backgroundColor:'transparent',
+             }]}/>
+          :<EmptyChart message="No ingestion runs recorded"/>}
+      </ChartCard>
+
+      {/* Manifests table */}
+      <div className="card" style={{marginTop:20,overflow:'hidden'}}>
+        <div style={{padding:'16px 20px',borderBottom:'1px solid #F1F5F9'}}>
+          <div style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>Ingestion Manifest History</div>
+          <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>Hash-chained audit trail of every ingestion run</div>
+        </div>
+        <div style={{overflowX:'auto'}}>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Started</th><th>Status</th><th>Source Rows</th><th>Inserted</th><th>Dupes</th><th>Gaps</th><th>Manifest Hash</th>
+              </tr>
+            </thead>
+            <tbody>
+              {manifests.slice().reverse().map(m=>(
+                <tr key={m.id}>
+                  <td style={{fontSize:12,color:'#94A3B8',fontFamily:'monospace'}}>{m.id}</td>
+                  <td style={{fontSize:12,color:'#475569',whiteSpace:'nowrap'}}>{fmtTime(m.started_at)}</td>
+                  <td>
+                    <span className="badge" style={{background:m.status==='SUCCESS'?'#DCFCE7':'#FEE2E2',color:m.status==='SUCCESS'?'#166534':'#991B1B'}}>
+                      {m.status}
+                    </span>
+                  </td>
+                  <td style={{fontWeight:600,color:'#1E293B'}}>{fmtNum(m.source_row_count)}</td>
+                  <td style={{fontWeight:600,color:'#16A34A'}}>{fmtNum(m.inserted_count)}</td>
+                  <td style={{color:'#94A3B8'}}>{fmtNum(m.duplicate_count)}</td>
+                  <td>{m.gap_detected?<span className="badge" style={{background:'#FEF9C3',color:'#854D0E'}}>GAP</span>:<span style={{color:'#94A3B8',fontSize:12}}>-</span>}</td>
+                  <td><span className="mono" style={{fontSize:11,color:'#6366F1'}}>{m.manifest_hash?.slice(0,16)}…</span></td>
+                </tr>
+              ))}
+              {manifests.length===0&&(
+                <tr><td colSpan={8} style={{textAlign:'center',padding:'32px 0',color:'#94A3B8',fontSize:13}}>No ingestion runs yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── System/Connection Page ───────────────────────────────────────────────────
+function SystemPage({system}){
+  const [schema,setSchema]=useState(null);
+  const [loading,setLoading]=useState(false);
+
+  useEffect(()=>{
+    setLoading(true);
+    apiFetch('/api/system/openemr-schema').then(d=>{setSchema(d);setLoading(false)}).catch(()=>setLoading(false));
+  },[]);
+
+  const conn=system?.openemr_connection||{};
+  const telem=system?.telemetry||{};
+
+  const fmtConnector=s=>s?s.replace(/_real$/,'').replace(/_/g,' ').split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ')+' Connector':'-';
+  const fmtMode=s=>({openemr_real:'Live / Production',openemr_mock:'Mock / Demo',demo:'Demo Only'}[s]||s||'-');
+
+  const statusCards=[
+    {l:'Data Source',v:fmtConnector(conn.connector),icon:'🔗'},
+    {l:'Operating Mode',v:fmtMode(system?.trustpulse_mode),icon:'⚙️'},
+    {l:'Writeback',v:conn.writeback_enabled?'ENABLED ⚠':'DISABLED ✓',icon:'🛡️',color:conn.writeback_enabled?'#DC2626':'#16A34A'},
+    {l:'Last Event',v:conn.last_event_time?fmtTime(conn.last_event_time):'No events yet',icon:'📅'},
+  ];
+
+  return(
+    <div className="fade" style={{padding:28,overflow:'auto',flex:1}}>
+      {/* Connection status hero */}
+      <div className="card" style={{padding:'24px 28px',marginBottom:20,borderLeft:`4px solid ${conn.connected?'#22C55E':'#EF4444'}`}}>
+        <div style={{display:'flex',alignItems:'center',gap:16}}>
+          <div style={{width:52,height:52,borderRadius:14,background:conn.connected?'#F0FDF4':'#FEF2F2',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24}}>
+            {conn.connected?'✅':'❌'}
+          </div>
+          <div>
+            <h2 style={{fontSize:18,fontWeight:700,color:'#0F172A'}}>{conn.connected?'OpenEMR Connected':'OpenEMR Disconnected'}</h2>
+            <p style={{fontSize:13,color:'#64748B',marginTop:4}}>
+              {conn.connected?'TrustPulse is actively reading live audit logs from OpenEMR.':'Run the setup SQL script (mock_openemr/openemr_ro_setup.sql) to provision the database user.'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Status grid */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:14,marginBottom:20}}>
+        {statusCards.map(({l,v,icon,color})=>(
+          <div key={l} className="card" style={{padding:'16px 18px'}}>
+            <div style={{fontSize:20,marginBottom:8}}>{icon}</div>
+            <div style={{fontSize:11,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:4}}>{l}</div>
+            <div style={{fontSize:14,fontWeight:700,color:color||'#1E293B'}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Telemetry */}
+      <div className="card" style={{padding:'20px 24px',marginBottom:20}}>
+        <div style={{fontSize:14,fontWeight:700,color:'#1E293B',marginBottom:14}}>Telemetry Integrity</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          {[{l:'Integrity Status',v:telem.stale?'⚠ Stale':'✓ OK',c:telem.stale?'#DC2626':'#16A34A'},
+            {l:'Last Manifest At',v:fmtTime(telem.last_manifest_at)},
+            {l:'Last Manifest Hash',v:telem.last_manifest_hash},
+          ].map(({l,v,c})=>(
+            <div key={l} style={{background:'#F8FAFC',borderRadius:10,padding:'12px 14px',gridColumn:l==='Last Manifest Hash'?'span 2':'auto'}}>
+              <div style={{fontSize:10,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:6}}>{l}</div>
+              <div className={l==='Last Manifest Hash'?'mono':''} style={{fontSize:l==='Last Manifest Hash'?11:13,fontWeight:600,color:c||'#1E293B',wordBreak:'break-all'}}>{v||'-'}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Schema inspector */}
+      <div className="card" style={{padding:'20px 24px'}}>
+        <div style={{fontSize:14,fontWeight:700,color:'#1E293B',marginBottom:4}}>OpenEMR Schema Inspector</div>
+        <div style={{fontSize:12,color:'#94A3B8',marginBottom:16}}>Tables visible to the TrustPulse connector</div>
+        {loading&&<Spinner/>}
+        {!loading&&schema&&(
+          <>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10,marginBottom:16}}>
+              {Object.entries(schema.tables||{}).map(([tbl,info])=>{
+                const missing=info.missing_expected_columns||[];
+                const allOk=info.exists&&missing.length===0;
+                const border=!info.exists?'#FCA5A5':missing.length?'#FDE68A':'#86EFAC';
+                const bg=!info.exists?'#FEF2F2':missing.length?'#FFFBEB':'#F0FDF4';
+                return(
+                <div key={tbl} style={{border:`1.5px solid ${border}`,borderRadius:10,padding:'12px 14px',background:bg}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                    <span className="mono" style={{fontSize:12,fontWeight:700,color:'#1E293B'}}>{tbl}</span>
+                    <StatusDot ok={allOk}/>
+                  </div>
+                  {!info.exists
+                    ?<div style={{fontSize:11,color:'#DC2626'}}>Table not found</div>
+                    :missing.length
+                      ?<div style={{fontSize:11,color:'#92400E'}}>Missing: {missing.join(', ')}</div>
+                      :<div style={{fontSize:11,color:'#15803D'}}>All required columns present</div>
+                  }
+                </div>
+                );
+              })}
+            </div>
+            {schema.limitations?.length>0&&(
+              <div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:10,padding:'12px 16px'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#92400E',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8}}>Limitations</div>
+                {schema.limitations.map((l,i)=><div key={i} style={{fontSize:12,color:'#78350F',marginBottom:4}}>• {l}</div>)}
+              </div>
+            )}
+            <div style={{marginTop:14,display:'flex',gap:8,flexWrap:'wrap'}}>
+              <span style={{fontSize:12,color:'#64748B'}}>Ingestion strategy:</span>
+              <span className="tag">{schema.selected_ingestion_strategy||'-'}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Governance disclaimer */}
+      <div style={{marginTop:20,background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:12,padding:'16px 20px'}}>
+        <div style={{fontSize:11,fontWeight:700,color:'#92400E',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8}}>⚖️ Important Disclaimer</div>
+        <div style={{fontSize:12,color:'#78350F',lineHeight:1.6}}>
+          TrustPulse is a governance decision-support tool. It does not certify HIPAA compliance, make final breach-notification determinations, or provide legal advice. All dispositions require human review by a qualified compliance officer. This tool is a proof-of-concept and is not production-hardened or HIPAA-certified.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Reports Page ────────────────────────────────────────────────────────────
+function ReportsPage(){
+  const [schedules,setSchedules]=useState([]);
+  const [history,setHistory]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [runLoading,setRunLoading]=useState(false);
+  const [msg,setMsg]=useState(null);
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({name:'',frequency:'WEEKLY',include_period_days:7,recipient_email:'',customPeriod:false});
+  const [emailRow,setEmailRow]=useState(null);
+  const [emailAddr,setEmailAddr]=useState('');
+
+  async function load(){
+    setLoading(true);
+    try{
+      const [s,h]=await Promise.all([
+        apiFetch('/api/reports/schedules'),
+        apiFetch('/api/reports/history?limit=20'),
+      ]);
+      if(s)setSchedules(s.schedules||[]);
+      if(h)setHistory(h.runs||[]);
+    }catch{}
+    setLoading(false);
+  }
+
+  useEffect(()=>{load();},[]);
+
+  async function runAdhoc(){
+    setRunLoading(true);setMsg(null);
+    try{
+      const r=await apiFetch('/api/reports/run',{method:'POST',body:{period_days:7,report_type:'ADHOC'}});
+      if(r&&r.status==='SUCCESS'){
+        setMsg({ok:true,text:`Report generated (${(r.file_size_bytes/1024).toFixed(1)} KB). Opening…`});
+        await load();
+        viewReport(r.run_id);
+      }else{
+        setMsg({ok:false,text:r?.detail||'Generation failed'});
+      }
+    }catch(e){setMsg({ok:false,text:String(e)});}
+    setRunLoading(false);
+  }
+
+  async function createSchedule(){
+    setMsg(null);
+    try{
+      const body={
+        name:form.name,
+        frequency:form.frequency,
+        frequency_days:form.frequency==='CUSTOM'?parseInt(form.include_period_days,10)||7:7,
+        include_period_days:parseInt(form.include_period_days,10)||7,
+        recipient_email:form.recipient_email||null,
+      };
+      await apiFetch('/api/reports/schedules',{method:'POST',body});
+      setShowForm(false);
+      setMsg({ok:true,text:'Schedule created.'});
+      await load();
+    }catch(e){setMsg({ok:false,text:String(e)});}
+  }
+
+  async function deleteSchedule(id){
+    if(!confirm('Delete this schedule?'))return;
+    await apiFetch(`/api/reports/schedules/${id}`,{method:'DELETE'});
+    await load();
+  }
+
+  async function runSchedule(id){
+    setRunLoading(true);setMsg(null);
+    try{
+      const r=await apiFetch('/api/reports/run',{method:'POST',body:{schedule_id:id,period_days:7,report_type:'ADHOC'}});
+      if(r&&r.status==='SUCCESS'){
+        setMsg({ok:true,text:'Report generated. Opening…'});
+        await load();
+        viewReport(r.run_id);
+      }
+    }catch(e){setMsg({ok:false,text:String(e)});}
+    setRunLoading(false);
+  }
+
+  async function sendEmail(runId,addr){
+    if(!addr||!addr.includes('@')){setMsg({ok:false,text:'Enter a valid email address.'});return;}
+    try{
+      await apiFetch(`/api/reports/history/${runId}/send`,{method:'POST',body:{to:addr}});
+      setMsg({ok:true,text:`Report emailed to ${addr}.`});
+      setEmailRow(null);setEmailAddr('');
+    }catch(e){setMsg({ok:false,text:String(e)});}
+  }
+
+  const freqColors={WEEKLY:'#6366F1',MONTHLY:'#0284C7',QUARTERLY:'#059669',CUSTOM:'#9333EA',ADHOC:'#64748B'};
+
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'28px 32px',background:'#F8FAFC'}}>
+
+      {/* Top bar */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:18,color:'#0F172A'}}>Governance Reports</div>
+          <div style={{fontSize:12,color:'#64748B',marginTop:2}}>Generate HIPAA audit-governance reports - download as HTML/PDF</div>
+        </div>
+        <div style={{display:'flex',gap:10}}>
+          <button className="btn-outline" onClick={()=>{setShowForm(f=>!f);setForm({name:'',frequency:'WEEKLY',include_period_days:7,recipient_email:'',customPeriod:false});}}>+ New Schedule</button>
+          <button className="btn-primary" onClick={runAdhoc} disabled={runLoading}>
+            {runLoading?'Generating…':'▶ Run Ad-hoc Report'}
+          </button>
+        </div>
+      </div>
+
+      {msg&&(
+        <div style={{background:msg.ok?'#DCFCE7':'#FEE2E2',color:msg.ok?'#166534':'#991B1B',
+                     borderRadius:8,padding:'10px 16px',marginBottom:16,fontSize:13}}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* Create-schedule form */}
+      {showForm&&(()=>{
+        const PRESETS=[
+          {f:'WEEKLY',   days:7,   emoji:'📅', label:'Weekly',    run:'Runs every 7 days',        cover:'Last 7 days of audit events',   accent:'#6366F1', bg:'#EEF2FF'},
+          {f:'MONTHLY',  days:30,  emoji:'📆', label:'Monthly',   run:'Runs every 30 days',       cover:'Last 30 days of audit events',  accent:'#0284C7', bg:'#E0F2FE'},
+          {f:'QUARTERLY',days:90,  emoji:'🗓', label:'Quarterly', run:'Runs every 90 days',       cover:'Last 90 days of audit events',  accent:'#059669', bg:'#DCFCE7'},
+          {f:'CUSTOM',   days:14,  emoji:'⚙️', label:'Custom',    run:'You set the interval',     cover:'You set the window',            accent:'#9333EA', bg:'#F5F3FF'},
+        ];
+        const isCustom=form.frequency==='CUSTOM';
+        const preset=PRESETS.find(p=>p.f===form.frequency)||PRESETS[0];
+        const defaultDays={WEEKLY:7,MONTHLY:30,QUARTERLY:90};
+        const inputBase={width:'100%',padding:'10px 14px',border:'1.5px solid #E2E8F0',borderRadius:10,
+                         fontSize:14,color:'#0F172A',outline:'none',boxSizing:'border-box',background:'#fff'};
+        const labelStyle={fontSize:11,fontWeight:700,color:'#64748B',display:'block',
+                          marginBottom:7,textTransform:'uppercase',letterSpacing:'.06em'};
+        return(
+          <div style={{background:'#fff',border:'1px solid #E2E8F0',borderRadius:16,padding:28,
+                       marginBottom:24,boxShadow:'0 4px 24px rgba(15,23,42,.07)'}}>
+
+            {/* Header */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:24}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:16,color:'#0F172A'}}>New Report Schedule</div>
+                <div style={{fontSize:12,color:'#64748B',marginTop:3}}>
+                  Frequency and coverage are always kept in sync - no mismatch possible.
+                </div>
+              </div>
+              <button onClick={()=>setShowForm(false)}
+                style={{background:'none',border:'none',cursor:'pointer',color:'#94A3B8',
+                        fontSize:20,lineHeight:1,padding:'0 2px'}}>✕</button>
+            </div>
+
+            {/* Schedule name */}
+            <div style={{marginBottom:22}}>
+              <label style={labelStyle}>Schedule Name</label>
+              <input style={inputBase} placeholder="e.g. Weekly HIPAA Audit Report"
+                value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+            </div>
+
+            {/* Frequency cards */}
+            <div style={{marginBottom:22}}>
+              <label style={labelStyle}>Frequency & Default Coverage</label>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+                {PRESETS.map(opt=>{
+                  const sel=form.frequency===opt.f;
+                  return(
+                    <div key={opt.f}
+                      onClick={()=>setForm(f=>({...f,frequency:opt.f,include_period_days:opt.days,customPeriod:opt.f==='CUSTOM'}))}
+                      style={{border:`2px solid ${sel?opt.accent:'#E2E8F0'}`,borderRadius:14,padding:'18px 16px',
+                              cursor:'pointer',background:sel?opt.bg:'#FAFAFA',
+                              transition:'border-color .15s,background .15s',
+                              boxShadow:sel?`0 0 0 4px ${opt.accent}18`:'none'}}>
+                      <div style={{fontSize:24,marginBottom:8}}>{opt.emoji}</div>
+                      <div style={{fontWeight:700,fontSize:15,color:sel?opt.accent:'#0F172A',marginBottom:3}}>
+                        {opt.label}
+                      </div>
+                      <div style={{fontSize:11,color:'#64748B',marginBottom:10}}>{opt.run}</div>
+                      <div style={{fontSize:11,fontWeight:600,
+                                   color:sel?opt.accent:'#64748B',
+                                   background:sel?`${opt.accent}18`:'#F1F5F9',
+                                   borderRadius:6,padding:'5px 9px',display:'inline-block'}}>
+                        {opt.cover}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Coverage window */}
+            <div style={{marginBottom:22,borderRadius:12,padding:'14px 16px',
+                         background:isCustom?'#F5F3FF':'#F8FAFC',
+                         border:`1px solid ${isCustom?'#D8B4FE':'#E2E8F0'}`}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:isCustom?14:0}}>
+                <span style={{fontSize:13,fontWeight:700,color:isCustom?'#9333EA':'#94A3B8'}}>
+                  Customize coverage window
+                </span>
+                {!isCustom&&(
+                  <span style={{fontSize:11,color:'#94A3B8',fontStyle:'italic'}}>
+                    - locked to {defaultDays[form.frequency]} days for {form.frequency.toLowerCase()} schedules.
+                    Select <b>Custom</b> to set a different window.
+                  </span>
+                )}
+              </div>
+
+              {isCustom&&(
+                <div>
+                  <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:10}}>
+                    <input type="range" min={1} max={365} value={form.include_period_days}
+                      onChange={e=>setForm(f=>({...f,include_period_days:parseInt(e.target.value)}))}
+                      style={{flex:1,accentColor:'#9333EA',height:4}}/>
+                    <div style={{minWidth:72,background:'#fff',border:'1.5px solid #D8B4FE',borderRadius:8,
+                                 padding:'6px 10px',textAlign:'center',fontSize:14,fontWeight:700,color:'#9333EA'}}>
+                      {form.include_period_days}d
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    {[7,14,30,60,90,180].map(d=>(
+                      <button key={d} onClick={()=>setForm(f=>({...f,include_period_days:d}))}
+                        style={{padding:'4px 12px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',
+                                border:`1.5px solid ${form.include_period_days===d?'#9333EA':'#E2E8F0'}`,
+                                background:form.include_period_days===d?'#9333EA':'#fff',
+                                color:form.include_period_days===d?'#fff':'#64748B'}}>
+                        {d}d
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Recipient email */}
+            <div style={{marginBottom:22}}>
+              <label style={labelStyle}>
+                Recipient Email
+                <span style={{fontWeight:400,fontSize:10,textTransform:'none',letterSpacing:0,
+                              color:'#94A3B8',marginLeft:6}}>optional - emailed after each run</span>
+              </label>
+              <div style={{position:'relative'}}>
+                <span style={{position:'absolute',left:14,top:'50%',transform:'translateY(-50%)',
+                              fontSize:15,color:'#94A3B8',pointerEvents:'none'}}>✉</span>
+                <input type="email" style={{...inputBase,paddingLeft:36}}
+                  placeholder="compliance@clinic.example"
+                  value={form.recipient_email}
+                  onChange={e=>setForm(f=>({...f,recipient_email:e.target.value}))}/>
+              </div>
+            </div>
+
+            {/* Live preview */}
+            <div style={{background:preset.bg,border:`1px solid ${preset.accent}40`,borderRadius:12,
+                         padding:'16px 18px',marginBottom:22}}>
+              <div style={{fontSize:10,fontWeight:800,color:preset.accent,textTransform:'uppercase',
+                           letterSpacing:'.08em',marginBottom:8}}>Schedule Preview</div>
+              <div style={{fontSize:13,color:'#0F172A',lineHeight:1.7}}>
+                <span style={{fontWeight:700}}>{form.name||'(unnamed schedule)'}</span>
+                {' '}will run{' '}
+                <span style={{fontWeight:700,color:preset.accent}}>
+                  {isCustom?`every ${form.include_period_days} days (custom)`:preset.run.toLowerCase()}
+                </span>
+                {' '}and each report will cover the last{' '}
+                <span style={{fontWeight:700,color:preset.accent}}>{form.include_period_days} days</span>
+                {' '}of audit events.
+                {form.recipient_email&&(
+                  <span> A copy will be emailed to{' '}
+                    <span style={{fontWeight:700}}>{form.recipient_email}</span>.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{display:'flex',gap:10}}>
+              <button className="btn-primary" onClick={createSchedule}
+                style={{padding:'10px 24px',fontSize:14}}>
+                Create Schedule
+              </button>
+              <button className="btn-outline" onClick={()=>setShowForm(false)}
+                style={{padding:'10px 20px',fontSize:14}}>
+                Cancel
+              </button>
+            </div>
+
+          </div>
+        );
+      })()}
+
+      {/* Schedules */}
+      <div style={{background:'#fff',border:'1px solid #E2E8F0',borderRadius:12,marginBottom:24,overflow:'hidden'}}>
+        <div style={{padding:'13px 24px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',
+                     fontSize:11,fontWeight:800,textTransform:'uppercase',letterSpacing:'.08em',color:'#475569'}}>
+          Scheduled Reports
+        </div>
+        {schedules.length===0?(
+          <div style={{padding:32,textAlign:'center',color:'#94A3B8',fontSize:13}}>
+            No schedules yet - create one above or run an ad-hoc report.
+          </div>
+        ):(
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Frequency</th><th>Coverage</th><th>Sync</th>
+                <th>Recipient</th><th>Last Run</th><th>Next Run</th><th>Status</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {schedules.map(s=>{
+                const defaultDays={WEEKLY:7,MONTHLY:30,QUARTERLY:90};
+                const synced=s.frequency==='CUSTOM'||s.include_period_days===defaultDays[s.frequency];
+                return(
+                <tr key={s.id}>
+                  <td style={{fontWeight:600}}>{s.name}</td>
+                  <td>
+                    <span style={{background:freqColors[s.frequency]||'#64748B',color:'#fff',
+                                  padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700}}>
+                      {s.frequency}
+                    </span>
+                  </td>
+                  <td style={{fontSize:12,color:'#64748B'}}>Last {s.include_period_days} days</td>
+                  <td>
+                    <span title={synced?'Coverage matches frequency':'Coverage window differs from run interval'}
+                      style={{fontSize:13}}>{synced?'✅':'⚠️'}</span>
+                  </td>
+                  <td style={{fontSize:12,color:'#64748B'}}>{s.recipient_email||'-'}</td>
+                  <td style={{fontSize:11,color:'#94A3B8'}}>{s.last_run_at?new Date(s.last_run_at).toLocaleDateString():'Never'}</td>
+                  <td style={{fontSize:11,color:'#94A3B8'}}>{s.next_run_at?new Date(s.next_run_at).toLocaleDateString():'-'}</td>
+                  <td>
+                    <span style={{background:s.is_active?'#DCFCE7':'#F1F5F9',
+                                  color:s.is_active?'#166534':'#64748B',
+                                  padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700}}>
+                      {s.is_active?'ACTIVE':'PAUSED'}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{display:'flex',gap:6}}>
+                      <button className="btn-outline" style={{padding:'3px 10px',fontSize:11}}
+                        onClick={()=>runSchedule(s.id)} disabled={runLoading}>Run Now</button>
+                      <button style={{background:'#FEE2E2',color:'#991B1B',border:'none',borderRadius:6,
+                                     padding:'3px 10px',fontSize:11,cursor:'pointer'}}
+                        onClick={()=>deleteSchedule(s.id)}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* History */}
+      <div style={{background:'#fff',border:'1px solid #E2E8F0',borderRadius:12,overflow:'hidden'}}>
+        <div style={{padding:'13px 24px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',
+                     fontSize:11,fontWeight:800,textTransform:'uppercase',letterSpacing:'.08em',color:'#475569'}}>
+          Report History
+        </div>
+        {loading&&history.length===0?(
+          <div style={{padding:32,textAlign:'center',color:'#94A3B8'}}>Loading…</div>
+        ):history.length===0?(
+          <div style={{padding:32,textAlign:'center',color:'#94A3B8',fontSize:13}}>No reports generated yet.</div>
+        ):(
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th><th>Schedule</th><th>Period</th><th>Generated At</th>
+                <th>By</th><th>Size</th><th>Status</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map(r=>(
+                <tr key={r.id}>
+                  <td>
+                    <span style={{background:freqColors[r.report_type]||'#64748B',color:'#fff',
+                                  padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700}}>
+                      {r.report_type}
+                    </span>
+                  </td>
+                  <td style={{fontSize:12}}>{r.schedule_name||'-'}</td>
+                  <td style={{fontSize:12,color:'#64748B'}}>{r.period_days}d</td>
+                  <td style={{fontSize:11,color:'#64748B'}}>
+                    {r.generated_at?new Date(r.generated_at).toLocaleString():'-'}
+                  </td>
+                  <td style={{fontSize:11,color:'#64748B'}}>{r.generated_by}</td>
+                  <td style={{fontSize:11,color:'#94A3B8'}}>
+                    {r.file_size_bytes?`${(r.file_size_bytes/1024).toFixed(1)} KB`:'-'}
+                  </td>
+                  <td>
+                    <span style={{background:r.status==='SUCCESS'?'#DCFCE7':r.status==='FAILED'?'#FEE2E2':'#FEF9C3',
+                                  color:r.status==='SUCCESS'?'#166534':r.status==='FAILED'?'#991B1B':'#854D0E',
+                                  padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700}}>
+                      {r.status}
+                    </span>
+                  </td>
+                  <td>
+                    {r.status==='SUCCESS'&&(
+                      <div>
+                        <div style={{display:'flex',gap:4}}>
+                          <button className="btn-outline" style={{padding:'3px 8px',fontSize:11}}
+                            onClick={()=>viewReport(r.id)}>View</button>
+                          <button className="btn-outline" style={{padding:'3px 8px',fontSize:11}}
+                            onClick={()=>downloadPdf(r.id)}>Save PDF</button>
+                          <button className="btn-outline" style={{padding:'3px 8px',fontSize:11}}
+                            onClick={()=>{setEmailRow(emailRow===r.id?null:r.id);setEmailAddr('');}}>
+                            Email
+                          </button>
+                        </div>
+                        {emailRow===r.id&&(
+                          <div style={{display:'flex',gap:4,marginTop:5}}>
+                            <input type="email" placeholder="recipient@example.com"
+                              style={{padding:'3px 8px',border:'1px solid #CBD5E1',borderRadius:6,fontSize:11,width:170}}
+                              value={emailAddr} onChange={e=>setEmailAddr(e.target.value)}
+                              onKeyDown={e=>e.key==='Enter'&&sendEmail(r.id,emailAddr)}/>
+                            <button className="btn-primary" style={{padding:'3px 10px',fontSize:11}}
+                              onClick={()=>sendEmail(r.id,emailAddr)}>Send</button>
+                            <button className="btn-outline" style={{padding:'3px 6px',fontSize:11}}
+                              onClick={()=>setEmailRow(null)}>✕</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+// ─── Admin Pages ─────────────────────────────────────────────────────────────
+
+const ROLE_META={
+  TRUSTPULSE_ADMIN:   {color:'#7C3AED',label:'Admin'},
+  COMPLIANCE_OFFICER: {color:'#0369A1',label:'Compliance Officer'},
+  AUDITOR:            {color:'#15803D',label:'Auditor'},
+  SECURITY_ADMIN:     {color:'#B45309',label:'Security Admin'},
+};
+const ALL_ROLES=Object.keys(ROLE_META);
+const PERM_LABELS={
+  review:'Review Cases',disposition:'Disposition Cases',export:'Export Evidence',
+  breach_assessment:'Breach Assessment',configure:'Configure Connector',trigger_ingestion:'Trigger Ingestion',
+};
+
+function AdminUsersPage(){
+  const [users,setUsers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [msg,setMsg]=useState(null);
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({email:'',display_name:'',role:'COMPLIANCE_OFFICER',password:''});
+  const [editId,setEditId]=useState(null);
+  const [editRole,setEditRole]=useState('');
+
+  const load=()=>{
+    setLoading(true);
+    apiFetch('/api/admin/users').then(d=>{setUsers(d.users||[]);setLoading(false)}).catch(()=>setLoading(false));
+  };
+  useEffect(()=>{load();},[]);
+
+  const flash=(m,ok=true)=>{setMsg({m,ok});setTimeout(()=>setMsg(null),3500);};
+
+  const createUser=async()=>{
+    if(!form.email||!form.password){flash('Email and password required',false);return;}
+    const r=await apiFetch('/api/admin/users',{method:'POST',body:form});
+    if(r&&r.id){flash('User created');setShowForm(false);setForm({email:'',display_name:'',role:'COMPLIANCE_OFFICER',password:''});load();}
+    else flash('Failed to create user',false);
+  };
+
+  const toggleActive=async(u)=>{
+    const r=await apiFetch(`/api/admin/users/${u.id}`,{method:'PATCH',body:{is_active:!u.is_active}});
+    if(r&&r.id){flash(`User ${r.is_active?'activated':'deactivated'}`);load();}
+    else flash('Update failed',false);
+  };
+
+  const saveRole=async(uid)=>{
+    const r=await apiFetch(`/api/admin/users/${uid}`,{method:'PATCH',body:{role:editRole}});
+    if(r&&r.id){flash('Role updated');setEditId(null);load();}
+    else flash('Update failed',false);
+  };
+
+  return(
+    <div className="fade" style={{padding:28,overflow:'auto',flex:1}}>
+      {msg&&<div style={{marginBottom:16,padding:'10px 16px',borderRadius:8,background:msg.ok?'#F0FDF4':'#FEF2F2',border:`1px solid ${msg.ok?'#86EFAC':'#FCA5A5'}`,color:msg.ok?'#15803D':'#DC2626',fontSize:13}}>{msg.m}</div>}
+
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+        <div>
+          <div style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>TrustPulse Platform Users</div>
+          <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>Accounts with access to this TrustPulse instance</div>
+        </div>
+        <button className="btn-primary" onClick={()=>setShowForm(s=>!s)}>{showForm?'Cancel':'+ New User'}</button>
+      </div>
+
+      {showForm&&(
+        <div className="card" style={{padding:'20px 24px',marginBottom:20,borderLeft:'4px solid #6366F1'}}>
+          <div style={{fontSize:13,fontWeight:700,color:'#1E293B',marginBottom:14}}>Create New User</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            <div>
+              <label style={{fontSize:11,fontWeight:600,color:'#64748B',display:'block',marginBottom:4}}>Email *</label>
+              <input className="input" placeholder="user@clinic.local" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))}/>
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:600,color:'#64748B',display:'block',marginBottom:4}}>Display Name</label>
+              <input className="input" placeholder="Dr. Jane Smith" value={form.display_name} onChange={e=>setForm(f=>({...f,display_name:e.target.value}))}/>
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:600,color:'#64748B',display:'block',marginBottom:4}}>Role *</label>
+              <select className="input" value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
+                {ALL_ROLES.map(r=><option key={r} value={r}>{ROLE_META[r]?.label||r}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:600,color:'#64748B',display:'block',marginBottom:4}}>Password * (min 8 chars)</label>
+              <input className="input" type="password" placeholder="••••••••" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))}/>
+            </div>
+          </div>
+          <button className="btn-primary" onClick={createUser}>Create User</button>
+        </div>
+      )}
+
+      {loading?<Spinner/>:(
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead>
+              <tr style={{background:'#F8FAFC',borderBottom:'2px solid #E2E8F0'}}>
+                {['User','Email','Role','Status','Last Login','Actions'].map(h=>(
+                  <th key={h} style={{padding:'10px 14px',textAlign:'left',fontSize:11,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.06em'}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u=>{
+                const rm=ROLE_META[u.role]||{color:'#6B7280',label:u.role};
+                return(
+                  <tr key={u.id} style={{borderBottom:'1px solid #F1F5F9',opacity:u.is_active?1:.55}}>
+                    <td style={{padding:'12px 14px'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10}}>
+                        <div style={{width:32,height:32,borderRadius:'50%',background:rm.color+'20',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:rm.color,flexShrink:0}}>
+                          {(u.display_name||u.email)[0].toUpperCase()}
+                        </div>
+                        <span style={{fontWeight:600,color:'#1E293B'}}>{u.display_name||'-'}</span>
+                      </div>
+                    </td>
+                    <td style={{padding:'12px 14px',color:'#64748B',fontFamily:'monospace',fontSize:12}}>{u.email}</td>
+                    <td style={{padding:'12px 14px'}}>
+                      {editId===u.id?(
+                        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                          <select className="input" style={{fontSize:12,padding:'4px 6px'}} value={editRole} onChange={e=>setEditRole(e.target.value)}>
+                            {ALL_ROLES.map(r=><option key={r} value={r}>{ROLE_META[r]?.label||r}</option>)}
+                          </select>
+                          <button className="btn-primary" style={{padding:'4px 10px',fontSize:11}} onClick={()=>saveRole(u.id)}>Save</button>
+                          <button style={{fontSize:11,color:'#64748B',background:'none',border:'none',cursor:'pointer'}} onClick={()=>setEditId(null)}>Cancel</button>
+                        </div>
+                      ):(
+                        <span style={{display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer'}} onClick={()=>{setEditId(u.id);setEditRole(u.role);}}>
+                          <span style={{background:rm.color+'18',color:rm.color,borderRadius:6,padding:'2px 8px',fontSize:11,fontWeight:700}}>{rm.label}</span>
+                          <span style={{fontSize:10,color:'#94A3B8'}}>✏</span>
+                        </span>
+                      )}
+                    </td>
+                    <td style={{padding:'12px 14px'}}>
+                      <span style={{background:u.is_active?'#F0FDF4':'#F8FAFC',color:u.is_active?'#15803D':'#94A3B8',borderRadius:6,padding:'2px 10px',fontSize:11,fontWeight:700,border:`1px solid ${u.is_active?'#86EFAC':'#E2E8F0'}`}}>
+                        {u.is_active?'Active':'Inactive'}
+                      </span>
+                    </td>
+                    <td style={{padding:'12px 14px',color:'#64748B',fontSize:12}}>{u.last_login?fmtTime(u.last_login):'Never'}</td>
+                    <td style={{padding:'12px 14px'}}>
+                      <button onClick={()=>toggleActive(u)} style={{fontSize:11,padding:'4px 12px',borderRadius:6,border:'1px solid #E2E8F0',background:u.is_active?'#FEF2F2':'#F0FDF4',color:u.is_active?'#DC2626':'#15803D',cursor:'pointer',fontWeight:600}}>
+                        {u.is_active?'Deactivate':'Activate'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{marginTop:14,fontSize:11,color:'#94A3B8'}}>
+        Deactivate a user before removing access. Deactivated users cannot log in but their audit trail is preserved.
+      </div>
+    </div>
+  );
+}
+
+function AdminPermissionsPage(){
+  const [groups,setGroups]=useState([]);
+  useEffect(()=>{apiFetch('/api/admin/permission-groups').then(d=>setGroups(d.groups||[])).catch(()=>{});},[]);
+  const allPerms=Object.keys(PERM_LABELS);
+  return(
+    <div className="fade" style={{padding:28,overflow:'auto',flex:1}}>
+      <div style={{marginBottom:20}}>
+        <div style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>Permission Groups</div>
+        <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>TrustPulse uses role-based access control. Each role is a permission group with a fixed set of capabilities.</div>
+      </div>
+
+      {/* Permission matrix */}
+      <div className="card" style={{padding:0,overflow:'hidden',marginBottom:20}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead>
+            <tr style={{background:'#F8FAFC',borderBottom:'2px solid #E2E8F0'}}>
+              <th style={{padding:'10px 14px',textAlign:'left',fontSize:11,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.06em',minWidth:160}}>Permission</th>
+              {ALL_ROLES.map(r=>{
+                const rm=ROLE_META[r]||{};
+                return(
+                  <th key={r} style={{padding:'10px 14px',textAlign:'center',fontSize:11,fontWeight:700,color:rm.color,textTransform:'uppercase',letterSpacing:'.06em'}}>
+                    {rm.label||r}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {allPerms.map(perm=>(
+              <tr key={perm} style={{borderBottom:'1px solid #F1F5F9'}}>
+                <td style={{padding:'10px 14px',fontWeight:600,color:'#1E293B'}}>{PERM_LABELS[perm]||perm}</td>
+                {ALL_ROLES.map(role=>{
+                  const g=groups.find(x=>x.role===role);
+                  const has=g&&g.permissions.includes(perm);
+                  return(
+                    <td key={role} style={{padding:'10px 14px',textAlign:'center'}}>
+                      {has
+                        ?<span style={{color:'#15803D',fontWeight:700,fontSize:15}}>✓</span>
+                        :<span style={{color:'#E2E8F0',fontSize:15}}>-</span>
+                      }
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Role cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:14}}>
+        {groups.map(g=>{
+          const rm=ROLE_META[g.role]||{color:'#6B7280',label:g.role};
+          return(
+            <div key={g.role} className="card" style={{padding:'18px 20px',borderLeft:`4px solid ${rm.color}`}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                <span style={{background:rm.color+'18',color:rm.color,borderRadius:6,padding:'3px 10px',fontSize:12,fontWeight:700}}>{rm.label}</span>
+              </div>
+              <p style={{fontSize:12,color:'#64748B',marginBottom:12,lineHeight:1.5}}>{g.description}</p>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                {g.permissions.map(p=>(
+                  <span key={p} style={{background:'#F1F5F9',color:'#475569',borderRadius:99,padding:'2px 8px',fontSize:11}}>{PERM_LABELS[p]||p}</span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{marginTop:20,background:'#F0F4FF',border:'1px solid #C7D2FE',borderRadius:10,padding:'14px 18px'}}>
+        <div style={{fontSize:11,fontWeight:700,color:'#4338CA',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:6}}>About TrustPulse RBAC</div>
+        <div style={{fontSize:12,color:'#4338CA',lineHeight:1.6}}>
+          TrustPulse uses role-based access control with four built-in roles. Roles are assigned per user - a user belongs to exactly one role.
+          Roles cannot be customised in this version; each role maps to a fixed permission set enforced server-side on every API call.
+          User Group layering (multiple roles per user, query-scoped access) is a planned future capability.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminSettingsPage(){
+  const [settings,setSettings]=useState({});
+  const [form,setForm]=useState({});
+  const [msg,setMsg]=useState(null);
+  const [testing,setTesting]=useState(false);
+  const [testResult,setTestResult]=useState(null);
+  const [saving,setSaving]=useState(false);
+
+  useEffect(()=>{
+    apiFetch('/api/admin/settings').then(d=>{
+      setSettings(d||{});
+      const vals={};
+      Object.entries(d||{}).forEach(([k,v])=>vals[k]=v.value||'');
+      setForm(vals);
+    }).catch(()=>{});
+  },[]);
+
+  const flash=(m,ok=true)=>{setMsg({m,ok});setTimeout(()=>setMsg(null),4000);};
+
+  const testConn=async()=>{
+    setTesting(true);setTestResult(null);
+    try{
+      const r=await apiFetch('/api/admin/settings/test-connection',{method:'POST',body:{openemr_db_url:form.openemr_db_url}});
+      setTestResult(r?.connected?'success':'fail');
+      if(!r?.connected) flash('Connection failed - check the URL and credentials',false);
+      else flash('Connection successful');
+    }catch(e){setTestResult('fail');flash('Connection failed: '+(e?.message||'unknown error'),false);}
+    finally{setTesting(false);}
+  };
+
+  const save=async()=>{
+    setSaving(true);
+    try{
+      const r=await apiFetch('/api/admin/settings',{method:'PUT',body:form});
+      if(r?.saved){
+        flash('Settings saved');
+        if(r.saved.includes('openemr_db_url')){
+          apiFetch('/api/admin/settings/apply-connection',{method:'POST'})
+            .then(x=>x?.connected&&flash('OpenEMR connector reconnected'))
+            .catch(()=>{});
+        }
+      } else flash('Save failed',false);
+    }catch(e){flash('Save failed: '+(e?.message||'unknown error'),false);}
+    finally{setSaving(false);}
+  };
+
+  const FIELD_META={
+    openemr_db_url:            {label:'OpenEMR Database URL',hint:'Full connection string including credentials',type:'password',full:true},
+    clinic_name:               {label:'Clinic / Facility Name',hint:'Shown in generated governance reports'},
+    ingestion_interval_seconds:{label:'Ingestion Interval (seconds)',hint:'How often TrustPulse polls OpenEMR audit logs',type:'number'},
+  };
+
+  return(
+    <div className="fade" style={{padding:28,overflow:'auto',flex:1}}>
+      {msg&&<div style={{marginBottom:16,padding:'10px 16px',borderRadius:8,background:msg.ok?'#F0FDF4':'#FEF2F2',border:`1px solid ${msg.ok?'#86EFAC':'#FCA5A5'}`,color:msg.ok?'#15803D':'#DC2626',fontSize:13}}>{msg.m}</div>}
+
+      <div className="card" style={{padding:'22px 26px',marginBottom:20}}>
+        <div style={{fontSize:14,fontWeight:700,color:'#1E293B',marginBottom:4}}>OpenEMR Connection &amp; Configuration</div>
+        <div style={{fontSize:12,color:'#94A3B8',marginBottom:20}}>Changes are saved to TrustPulse's internal settings and applied immediately to the connector - no container restart required.</div>
+
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          {Object.entries(FIELD_META).map(([key,meta])=>(
+            <div key={key} style={{gridColumn:meta.full?'span 2':'auto'}}>
+              <label style={{fontSize:11,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.06em',display:'block',marginBottom:6}}>{meta.label}</label>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <input
+                  className="input"
+                  type={meta.type==='password'?'text':meta.type||'text'}
+                  style={{fontFamily:meta.type==='password'?'monospace':'inherit',fontSize:12,flex:1}}
+                  value={form[key]||''}
+                  placeholder={meta.hint}
+                  onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}
+                />
+                {key==='openemr_db_url'&&(
+                  <button
+                    onClick={testConn}
+                    disabled={testing||!form.openemr_db_url}
+                    style={{padding:'8px 14px',borderRadius:8,border:'1px solid #E2E8F0',background:testResult==='success'?'#F0FDF4':testResult==='fail'?'#FEF2F2':'#F8FAFC',color:testResult==='success'?'#15803D':testResult==='fail'?'#DC2626':'#475569',cursor:'pointer',fontSize:12,fontWeight:600,whiteSpace:'nowrap'}}>
+                    {testing?'Testing…':testResult==='success'?'✓ OK':testResult==='fail'?'✗ Failed':'Test Connection'}
+                  </button>
+                )}
+              </div>
+              <div style={{fontSize:11,color:'#94A3B8',marginTop:4}}>{meta.hint}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginTop:20,display:'flex',gap:10,alignItems:'center'}}>
+          <button className="btn-primary" onClick={save} disabled={saving}>{saving?'Saving…':'Save Settings'}</button>
+          <span style={{fontSize:11,color:'#94A3B8'}}>Saves to TrustPulse DB and reconnects the OpenEMR connector immediately.</span>
+        </div>
+      </div>
+
+      <div className="card" style={{padding:'18px 22px'}}>
+        <div style={{fontSize:13,fontWeight:700,color:'#1E293B',marginBottom:12}}>Read-Only Settings</div>
+        <div style={{fontSize:12,color:'#94A3B8',marginBottom:12}}>These are set via environment variables at container start and cannot be changed without a restart.</div>
+        {[
+          {k:'TRUSTPULSE_BULK_ACCESS_THRESHOLD',l:'Cold-Start Bulk Access Threshold (R-02)',hint:'Unique patients/day threshold during COLD_START and TRAINING phases'},
+          {k:'TRUSTPULSE_VOLUME_SPIKE_THRESHOLD',l:'Cold-Start Volume Spike Threshold (R-08)',hint:'Total events/day threshold during cold-start phases'},
+          {k:'TRUSTPULSE_MODE',l:'Runtime Mode',hint:'openemr_real = live connector'},
+          {k:'TRUSTPULSE_JWT_SECRET',l:'JWT Secret',hint:'Token signing key - set in .env'},
+          {k:'TRUSTPULSE_PATIENT_TOKEN_SECRET',l:'Patient Token HMAC Secret',hint:'Key for one-way patient ID tokenisation'},
+        ].map(({k,l,hint})=>(
+          <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'9px 0',borderBottom:'1px solid #F1F5F9'}}>
+            <div>
+              <div style={{fontSize:12,fontWeight:600,color:'#1E293B'}}>{l}</div>
+              <div style={{fontSize:11,color:'#94A3B8',marginTop:2}}>{hint}</div>
+            </div>
+            <code style={{background:'#F1F5F9',padding:'2px 8px',borderRadius:4,fontSize:11,color:'#475569',marginLeft:16,flexShrink:0}}>{k}</code>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminPrivacyPage(){
+  const [config,setConfig]=useState({module_enabled:false,obfuscated_fields:[],maskable_fields:{}});
+  const [requests,setRequests]=useState([]);
+  const [msg,setMsg]=useState(null);
+  const [saving,setSaving]=useState(false);
+
+  const load=()=>{
+    apiFetch('/api/admin/privacy/config').then(d=>setConfig(d||{})).catch(()=>{});
+    apiFetch('/api/admin/privacy/requests').then(d=>setRequests(d?.requests||[])).catch(()=>{});
+  };
+  useEffect(()=>{load();},[]);
+
+  const flash=(m,ok=true)=>{setMsg({m,ok});setTimeout(()=>setMsg(null),3500);};
+
+  const toggleField=async(field)=>{
+    const cur=config.obfuscated_fields||[];
+    const next=cur.includes(field)?cur.filter(f=>f!==field):[...cur,field];
+    const r=await apiFetch('/api/admin/privacy/config',{method:'PUT',body:{module_enabled:config.module_enabled,obfuscated_fields:next}});
+    if(r){setConfig(c=>({...c,obfuscated_fields:next}));flash('Fields updated');}
+    else flash('Update failed',false);
+  };
+
+  const toggleModule=async()=>{
+    const next=!config.module_enabled;
+    setSaving(true);
+    const r=await apiFetch('/api/admin/privacy/config',{method:'PUT',body:{module_enabled:next,obfuscated_fields:config.obfuscated_fields||[]}});
+    setSaving(false);
+    if(r){setConfig(c=>({...c,module_enabled:next}));flash(`Data Privacy ${next?'enabled':'disabled'}`);}
+    else flash('Update failed',false);
+  };
+
+  const decide=async(id,decision,denied_reason='')=>{
+    const r=await apiFetch(`/api/admin/privacy/requests/${id}/decide`,{method:'PATCH',body:{decision,denied_reason}});
+    if(r){flash(`Request ${decision.toLowerCase()}`);load();}
+    else flash('Action failed',false);
+  };
+
+  const statusColor={PENDING:'#92400E',APPROVED:'#15803D',DENIED:'#DC2626',EXPIRED:'#94A3B8'};
+  const statusBg={PENDING:'#FFFBEB',APPROVED:'#F0FDF4',DENIED:'#FEF2F2',EXPIRED:'#F8FAFC'};
+  const pending=requests.filter(r=>r.status==='PENDING');
+  const history=requests.filter(r=>r.status!=='PENDING');
+
+  return(
+    <div className="fade" style={{padding:28,overflow:'auto',flex:1}}>
+      {msg&&<div style={{marginBottom:16,padding:'10px 16px',borderRadius:8,background:msg.ok?'#F0FDF4':'#FEF2F2',border:`1px solid ${msg.ok?'#86EFAC':'#FCA5A5'}`,color:msg.ok?'#15803D':'#DC2626',fontSize:13}}>{msg.m}</div>}
+
+      {/* Module toggle */}
+      <div className="card" style={{padding:'20px 24px',marginBottom:20,borderLeft:`4px solid ${config.module_enabled?'#6366F1':'#E2E8F0'}`}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div>
+            <div style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>Data Privacy Module</div>
+            <div style={{fontSize:12,color:'#64748B',marginTop:4,maxWidth:560,lineHeight:1.6}}>
+              When enabled, selected log fields are masked for users without approved access.
+              Users can request access to view protected values. Access must be explicitly authorised by an administrator before any masked value is revealed.
+            </div>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8,flexShrink:0,marginLeft:20}}>
+            <button onClick={toggleModule} disabled={saving} style={{padding:'8px 20px',borderRadius:8,border:'none',cursor:'pointer',fontWeight:700,fontSize:13,background:config.module_enabled?'#EF4444':'#6366F1',color:'#fff'}}>
+              {config.module_enabled?'Disable':'Enable'}
+            </button>
+            <span style={{fontSize:11,fontWeight:700,color:config.module_enabled?'#15803D':'#94A3B8'}}>
+              {config.module_enabled?'● Active':'○ Inactive'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Field selection */}
+      <div className="card" style={{padding:'20px 24px',marginBottom:20,opacity:config.module_enabled?1:.5,pointerEvents:config.module_enabled?'auto':'none'}}>
+        <div style={{fontSize:13,fontWeight:700,color:'#1E293B',marginBottom:4}}>Fields to Obfuscate</div>
+        <div style={{fontSize:12,color:'#94A3B8',marginBottom:16}}>Selected fields are replaced with ●●●●●●●● for users without approved access.</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          {Object.entries(config.maskable_fields||{}).map(([field,label])=>{
+            const on=(config.obfuscated_fields||[]).includes(field);
+            return(
+              <div key={field} onClick={()=>toggleField(field)} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',borderRadius:10,border:`2px solid ${on?'#6366F1':'#E2E8F0'}`,background:on?'#EEF2FF':'#F8FAFC',cursor:'pointer',transition:'all .15s'}}>
+                <div style={{width:20,height:20,borderRadius:6,background:on?'#6366F1':'#E2E8F0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:12,color:'#fff',fontWeight:700}}>
+                  {on?'✓':''}
+                </div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:'#1E293B'}}>{label}</div>
+                  <div style={{fontSize:11,color:'#94A3B8',fontFamily:'monospace'}}>{field}</div>
+                </div>
+                {on&&<span style={{marginLeft:'auto',fontSize:11,color:'#6366F1',fontWeight:700}}>Masked</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Pending requests */}
+      <div className="card" style={{padding:'20px 24px',marginBottom:20}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>Pending Access Requests</div>
+            <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>Users requesting access to view protected field values.</div>
+          </div>
+          {pending.length>0&&<span style={{background:'#FEF3C7',color:'#92400E',borderRadius:99,padding:'2px 10px',fontSize:11,fontWeight:700}}>{pending.length} pending</span>}
+        </div>
+        {pending.length===0
+          ?<div style={{fontSize:12,color:'#94A3B8',fontStyle:'italic'}}>No pending requests.</div>
+          :pending.map(r=>(
+            <div key={r.id} style={{border:'1px solid #FDE68A',borderRadius:10,padding:'14px 16px',marginBottom:10,background:'#FFFBEB'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                <div>
+                  <span style={{fontWeight:700,color:'#1E293B',fontSize:13}}>{r.requester_email}</span>
+                  <span style={{marginLeft:8,fontSize:11,color:'#92400E',background:'#FEF3C7',borderRadius:6,padding:'1px 6px'}}>{r.requester_role?.replace(/_/g,' ')}</span>
+                </div>
+                <span style={{fontSize:11,color:'#94A3B8'}}>{fmtTime(r.created_at)}</span>
+              </div>
+              <div style={{fontSize:12,color:'#475569',marginBottom:12,fontStyle:'italic'}}>"{r.reason}"</div>
+              <div style={{display:'flex',gap:8}}>
+                <button className="btn-primary" style={{fontSize:12,padding:'6px 16px'}} onClick={()=>decide(r.id,'APPROVED')}>Approve (24h)</button>
+                <button onClick={()=>{const reason=prompt('Reason for denial (optional):');decide(r.id,'DENIED',reason||'');}} style={{fontSize:12,padding:'6px 16px',borderRadius:8,border:'1px solid #FCA5A5',background:'#FEF2F2',color:'#DC2626',cursor:'pointer',fontWeight:600}}>Deny</button>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      {/* History */}
+      {history.length>0&&(
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <div style={{padding:'14px 20px',fontSize:13,fontWeight:700,color:'#1E293B',borderBottom:'1px solid #F1F5F9'}}>Access Request History</div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead>
+              <tr style={{background:'#F8FAFC'}}>
+                {['User','Status','Granted By','Expires','Reason'].map(h=>(
+                  <th key={h} style={{padding:'8px 14px',textAlign:'left',fontSize:11,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.06em'}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {history.map(r=>(
+                <tr key={r.id} style={{borderBottom:'1px solid #F1F5F9'}}>
+                  <td style={{padding:'10px 14px',fontWeight:600}}>{r.requester_email}</td>
+                  <td style={{padding:'10px 14px'}}>
+                    <span style={{background:statusBg[r.status]||'#F8FAFC',color:statusColor[r.status]||'#94A3B8',borderRadius:6,padding:'2px 8px',fontSize:11,fontWeight:700}}>{r.status}</span>
+                  </td>
+                  <td style={{padding:'10px 14px',color:'#64748B'}}>{r.granted_by||'-'}</td>
+                  <td style={{padding:'10px 14px',color:'#64748B',fontSize:11}}>{r.expires_at?fmtTime(r.expires_at):'-'}</td>
+                  <td style={{padding:'10px 14px',color:'#64748B',fontStyle:'italic',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── App Root ─────────────────────────────────────────────────────────────────
+function App(){
+  const [user,setUser]=useState(getSavedUser);
+  const [page,setPage]=useState('dashboard');
+  const [cases,setCases]=useState([]);
+  const [users,setUsers]=useState([]);
+  const [ingestion,setIngestion]=useState(null);
+  const [system,setSystem]=useState(null);
+  const [loadingData,setLoadingData]=useState(false);
+  const [drawerCase,setDrawerCase]=useState(null);
+  const pollRef=useRef(null);
+
+  function onLogin(token,u){setToken(token);saveUser(u);setUser(u)}
+  function onLogout(){setToken(null);saveUser(null);setUser(null)}
+
+  async function fetchAll(){
+    setLoadingData(true);
+    try{
+      const [c,i,s,u]=await Promise.all([
+        apiFetch('/api/cases'),
+        apiFetch('/api/ingestion/status'),
+        apiFetch('/api/system/status'),
+        apiFetch('/api/users'),
+      ]);
+      if(c)setCases(c.cases||[]);
+      if(i)setIngestion(i);
+      if(s)setSystem(s);
+      if(u)setUsers(Array.isArray(u)?u:[]);
+    }catch{}
+    setLoadingData(false);
+  }
+
+  useEffect(()=>{
+    if(!user)return;
+    fetchAll();
+    pollRef.current=setInterval(()=>fetchAll(),60000);
+    return()=>clearInterval(pollRef.current);
+  },[user]);
+
+  if(!user)return <LoginPage onLogin={onLogin}/>;
+
+  const connected=system?.openemr_connection?.connected||false;
+  const pageTitles={
+    dashboard:         {title:'Dashboard',subtitle:'Real-time governance overview from live OpenEMR audit logs'},
+    cases:             {title:'Review Case Queue',subtitle:`${cases.filter(c=>c.status==='OPEN').length} open cases requiring review`},
+    employees:         {title:'Access Review Profiles',subtitle:'Access patterns grouped by role and user'},
+    ingestion:         {title:'Ingestion & Telemetry',subtitle:'Hash-chained ingestion manifest history'},
+    reports:           {title:'Governance Reports',subtitle:'Generate, schedule, and download HIPAA audit-governance reports'},
+    system:            {title:'System Connection',subtitle:'OpenEMR connector status and schema inspection'},
+    admin_users:       {title:'Users',subtitle:'Manage TrustPulse platform accounts'},
+    admin_permissions: {title:'Permission Groups',subtitle:'Role capabilities and access control matrix'},
+    admin_privacy:     {title:'Data Privacy',subtitle:'Field masking, access requests and approval workflow'},
+    admin_settings:    {title:'Settings',subtitle:'OpenEMR connection and runtime configuration'},
+  };
+
+  return(
+    <div style={{display:'flex',height:'100vh',overflow:'hidden'}}>
+      <Sidebar page={page} setPage={setPage} user={user} onLogout={onLogout} casesCount={cases.filter(c=>c.status==='OPEN').length}/>
+      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <Header title={pageTitles[page]?.title||''} subtitle={pageTitles[page]?.subtitle||''} connected={connected}/>
+        {loadingData&&cases.length===0&&<Spinner/>}
+        {page==='dashboard'&&<DashboardPage cases={cases} ingestion={ingestion} system={system} setPage={setPage}/>}
+        {page==='cases'&&<CasesPage cases={cases} user={user} onCaseClick={id=>setDrawerCase(id)}/>}
+        {page==='employees'&&<EmployeesPage cases={cases} users={users}/>}
+        {page==='ingestion'&&<IngestionPage ingestion={ingestion} onRefresh={fetchAll}/>}
+        {page==='reports'&&<ReportsPage/>}
+        {page==='system'&&<SystemPage system={system}/>}
+        {page==='admin_users'&&<AdminUsersPage/>}
+        {page==='admin_permissions'&&<AdminPermissionsPage/>}
+        {page==='admin_privacy'&&<AdminPrivacyPage/>}
+        {page==='admin_settings'&&<AdminSettingsPage/>}
+      </div>
+      {drawerCase&&(
+        <CaseDrawer
+          caseId={drawerCase}
+          user={user}
+          onClose={()=>setDrawerCase(null)}
+          onDisposed={()=>fetchAll()}/>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App,null));
+</script>
+</body>
+</html>

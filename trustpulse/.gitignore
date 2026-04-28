@@ -1,0 +1,18 @@
+# Secrets — never commit (.env.example is intentionally tracked)
+.env
+.env.local
+.env.production
+
+# Runtime data
+backend/data/
+*.db
+*.sqlite
+reports/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log
