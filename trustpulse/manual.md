@@ -66,7 +66,7 @@ If either command fails, fix Docker Desktop first before continuing.
 If the repo is on the Windows drive:
 
 ```bash
-cd /mnt/c/Users/<your-user>/path/to/CYSEopenEMR-idea-development
+cd /mnt/c/Users/<your-user>/path/to/TPcyseOpenEMR
 ```
 
 You do not need `chmod +x setup.sh` to follow this manual process.
@@ -74,7 +74,7 @@ You do not need `chmod +x setup.sh` to follow this manual process.
 ### Windows PowerShell
 
 ```powershell
-cd C:\Users\<your-user>\path\to\CYSEopenEMR-idea-development
+cd C:\Users\<your-user>\path\to\TPcyseOpenEMR
 ```
 
 ## 4. Create the Root `.env`

@@ -1,5 +1,4 @@
 # Secrets — never commit (.env.example is intentionally tracked)
-.env
 .env.local
 .env.production
 
