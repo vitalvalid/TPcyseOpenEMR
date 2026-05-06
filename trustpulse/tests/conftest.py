@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 from db.models import Base, TrustPulseUser
 from api.auth import hash_password
+from review_reasons import seed_review_reasons
 
 TEST_DB_URL = "sqlite:///:memory:"
 
@@ -21,6 +22,7 @@ def db():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
+    seed_review_reasons(session)
     yield session
     session.close()
     Base.metadata.drop_all(engine)

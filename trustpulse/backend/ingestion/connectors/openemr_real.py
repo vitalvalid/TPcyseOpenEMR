@@ -139,6 +139,7 @@ def _minimize_payload(row: dict) -> dict:
     return {
         "source_id":  row.get("id"),
         "event":      row.get("event"),
+        "success":    row.get("success"),
         "method":     row.get("method"),
         "request":    row.get("request"),
     }
@@ -150,6 +151,7 @@ def _hash_source_row(row: dict) -> str:
         "date":       str(row.get("date")),
         "user":       row.get("user"),
         "event":      row.get("event"),
+        "success":    row.get("success"),
         "patient_id": row.get("log_patient_id"),
         "ip_address": row.get("ip_address"),
         "method":     row.get("method"),
@@ -190,6 +192,8 @@ def _fetch_log_plus_api_log(engine: Engine, last_id: int, limit: int) -> tuple:
             l.date,
             l.user,
             l.event,
+            l.success,
+            l.comments,
             l.patient_id AS log_patient_id,
             al.method,
             al.request,
@@ -212,7 +216,7 @@ def _fetch_log_plus_api_log(engine: Engine, last_id: int, limit: int) -> tuple:
 
 def _fetch_log_only(engine: Engine, last_id: int, limit: int) -> tuple:
     sql = """
-        SELECT id, date, user, event, patient_id AS log_patient_id
+        SELECT id, date, user, event, success, comments, patient_id AS log_patient_id
         FROM log
         WHERE id > :last_id
         ORDER BY id ASC
@@ -229,13 +233,28 @@ def _fetch_log_only(engine: Engine, last_id: int, limit: int) -> tuple:
 
 
 def _normalize_raw_rows(engine: Engine, raw_rows: List[dict]) -> tuple:
-    """Returns (normalized_events, parse_errors)."""
+    """Returns (normalized_events, parse_errors, fetch_metadata)."""
     normalized = []
     errors = []
+    meta = {
+        "source_rows_seen": len(raw_rows),
+        "rows_excluded_by_policy": 0,
+        "rows_excluded_system_admin": 0,
+        "rows_unsupported_event_type": 0,
+        "rows_missing_required_fields": 0,
+        "last_source_id_seen": None,
+        "last_source_id_ingested": None,
+    }
+    if raw_rows:
+        ids = [r.get("id") for r in raw_rows if r.get("id") is not None]
+        meta["last_source_id_seen"] = max(ids) if ids else None
     for r in raw_rows:
         try:
             username = r.get("user") or ""
             if not username or username in SKIP_USERNAMES:
+                meta["rows_excluded_by_policy"] += 1
+                if username in SKIP_USERNAMES:
+                    meta["rows_excluded_system_admin"] += 1
                 continue
             user_info = _get_user_info(engine, username)
 
@@ -249,14 +268,35 @@ def _normalize_raw_rows(engine: Engine, raw_rows: List[dict]) -> tuple:
             else:
                 tp_event = _openemr_event_to_tp(openemr_event)
 
+            # OpenEMR may record both successful and failed UI logins as event='login'
+            # and distinguish them only via the success flag.
+            if tp_event == "login" and r.get("success") in (0, "0", False):
+                tp_event = "failed_login"
+
+            if tp_event in ("unknown", ""):
+                meta["rows_excluded_by_policy"] += 1
+                meta["rows_unsupported_event_type"] += 1
+                continue
+
             pid = _parse_patient_id(request_path)
             if not pid:
                 raw_pid = r.get("log_patient_id")
                 pid = str(raw_pid) if raw_pid and raw_pid != 0 else None
 
+            # OpenEMR fires patient-record-select with patient_id=0 every ~60s
+            # as a dashboard heartbeat. Skip these — no patient was accessed.
+            if tp_event == "patient_access" and not pid:
+                meta["rows_excluded_by_policy"] += 1
+                continue
+
             event_time = r.get("date")
             if not isinstance(event_time, datetime):
                 event_time = datetime.fromisoformat(str(event_time))
+
+            if not r.get("id") or not event_time or not username:
+                meta["rows_excluded_by_policy"] += 1
+                meta["rows_missing_required_fields"] += 1
+                continue
 
             success = tp_event not in ("failed_login",)
 
@@ -282,6 +322,7 @@ def _normalize_raw_rows(engine: Engine, raw_rows: List[dict]) -> tuple:
                 "user_name":              user_info["user_name"],
                 "user_role":              user_info["user_role"],
             })
+            meta["last_source_id_ingested"] = r["id"]
         except Exception as exc:
             log.warning("Failed to normalize row id=%s: %s", r.get("id"), exc)
             errors.append({
@@ -290,8 +331,7 @@ def _normalize_raw_rows(engine: Engine, raw_rows: List[dict]) -> tuple:
                 "error_message":          str(exc),
                 "raw_payload_minimized":  _minimize_payload(r),
             })
-
-    return normalized, errors
+    return normalized, errors, meta
 
 
 def fetch_new_events(
@@ -301,7 +341,8 @@ def fetch_new_events(
 ) -> tuple:
     """
     Fetch new audit events from OpenEMR log (+ api_log if available).
-    Returns (events, parse_errors). Raises RuntimeError if DB is unreachable.
+    Returns (events, parse_errors, fetch_metadata).
+    Raises RuntimeError if DB is unreachable.
     """
     available = check_available_tables(engine)
 

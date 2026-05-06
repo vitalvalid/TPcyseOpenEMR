@@ -15,6 +15,9 @@ from db.models import IngestionManifest, RawAuditEvent, IngestionError, Normaliz
 from db.session import get_tp_session
 from ingestion.log_reader import fetch_new_logs, get_source_batch_hash
 from ingestion.normalizer import normalize_and_score
+from ingestion.openemr_schema import inspect_schema
+from db.session import get_openemr_engine
+from telemetry_health import summarize_manifest_telemetry
 from api.auth import require_permission
 
 router = APIRouter(prefix="/api/ingestion", tags=["ingestion"])
@@ -57,14 +60,14 @@ def _compute_normalized_batch_hash(events: list) -> str:
     return hashlib.sha256("|".join(ids).encode()).hexdigest()
 
 
-def _detect_gaps(last_id: int, source_ids: list) -> tuple:
+def _detect_gaps(last_id: int, source_ids: list, *, is_first_ingestion: bool = False) -> tuple:
     """Detect gaps between last ingested ID and new batch, and within the batch."""
     if not source_ids:
         return False, []
     sorted_ids = sorted(source_ids)
     gaps = []
     first = sorted_ids[0]
-    if first > last_id + 1:
+    if not is_first_ingestion and first > last_id + 1:
         gaps.append({"from": last_id + 1, "to": first - 1})
     for i in range(1, len(sorted_ids)):
         if sorted_ids[i] - sorted_ids[i - 1] > 1:
@@ -81,6 +84,7 @@ def run_ingestion_cycle(db: Session) -> dict:
         .first()
     )
     last_id = last[0] if last else 0
+    is_first_ingestion = last is None
 
     previous_hash = _get_previous_manifest_hash(db)
 
@@ -105,16 +109,29 @@ def run_ingestion_cycle(db: Session) -> dict:
     duplicate_ct = 0
 
     try:
-        raw_rows, parse_errors_list = fetch_new_logs(last_id)
+        schema_info = inspect_schema(get_openemr_engine())
+        raw_rows, parse_errors_list, fetch_meta = fetch_new_logs(last_id)
 
         if not raw_rows:
+            telemetry = summarize_manifest_telemetry(
+                manifest,
+                schema_info=schema_info,
+                source_reachable=schema_info.get("connected", False),
+            )
             manifest.source_row_count = 0
+            manifest.source_rows_seen = 0
             manifest.inserted_count   = 0
+            manifest.rows_inserted    = 0
             manifest.duplicate_count  = 0
             manifest.parse_error_count = 0
             manifest.source_batch_sha256 = hashlib.sha256(b"").hexdigest()
             manifest.normalized_batch_sha256 = hashlib.sha256(b"").hexdigest()
             manifest.gap_detected     = False
+            manifest.raw_source_gap_detected = False
+            manifest.coverage_warning = False
+            manifest.telemetry_status = telemetry["status"]
+            manifest.telemetry_status_label = telemetry["label"]
+            manifest.telemetry_status_description = telemetry["description"]
             manifest.status           = "SUCCESS"
             manifest.completed_at     = datetime.utcnow()
             manifest.manifest_hash    = _compute_manifest_hash(manifest, previous_hash)
@@ -154,24 +171,56 @@ def run_ingestion_cycle(db: Session) -> dict:
         source_ids   = [r["source_log_id"] for r in raw_rows]
         duplicate_ct = sum(1 for sid in source_ids if sid in existing_ids)
 
-        gap_detected, gaps = _detect_gaps(last_id, source_ids)
+        raw_gap_detected, gaps = _detect_gaps(last_id, source_ids, is_first_ingestion=is_first_ingestion)
         source_batch_hash  = get_source_batch_hash(raw_rows)
 
         new_events = normalize_and_score(raw_rows, db, manifest_id=manifest.id)
         normalized_hash = _compute_normalized_batch_hash(new_events)
+        coverage_warning = any([
+            (fetch_meta.get("rows_excluded_by_policy", 0) or 0) > 0,
+            (fetch_meta.get("rows_unsupported_event_type", 0) or 0) > 0,
+            (fetch_meta.get("rows_missing_required_fields", 0) or 0) > 0,
+        ])
+        coverage_reasons = []
+        if fetch_meta.get("rows_excluded_system_admin", 0):
+            coverage_reasons.append(f"{fetch_meta['rows_excluded_system_admin']} admin/system rows were excluded by monitoring policy.")
+        if fetch_meta.get("rows_unsupported_event_type", 0):
+            coverage_reasons.append(f"{fetch_meta['rows_unsupported_event_type']} rows used unsupported event types.")
+        if fetch_meta.get("rows_missing_required_fields", 0):
+            coverage_reasons.append(f"{fetch_meta['rows_missing_required_fields']} rows were missing required fields.")
 
         manifest.source_row_count        = len(raw_rows)
+        manifest.source_rows_seen        = fetch_meta.get("source_rows_seen", len(raw_rows))
+        manifest.rows_inserted           = len(new_events)
         manifest.source_min_id           = min(source_ids)
         manifest.source_max_id           = max(source_ids)
         manifest.inserted_count          = len(new_events)
         manifest.duplicate_count         = duplicate_ct
+        manifest.rows_excluded_by_policy = fetch_meta.get("rows_excluded_by_policy", 0)
+        manifest.rows_excluded_system_admin = fetch_meta.get("rows_excluded_system_admin", 0)
+        manifest.rows_unsupported_event_type = fetch_meta.get("rows_unsupported_event_type", 0)
+        manifest.rows_missing_required_fields = fetch_meta.get("rows_missing_required_fields", 0)
         manifest.parse_error_count       = len(parse_errors_list)
         manifest.source_batch_sha256     = source_batch_hash
         manifest.normalized_batch_sha256 = normalized_hash
-        manifest.gap_detected            = gap_detected
+        manifest.gap_detected            = raw_gap_detected
         manifest.gap_ranges_json         = gaps if gaps else None
+        manifest.raw_source_gap_detected = raw_gap_detected
+        manifest.raw_source_gap_ranges_json = gaps if gaps else None
+        manifest.coverage_warning        = coverage_warning
+        manifest.coverage_warning_reason = " ".join(coverage_reasons) if coverage_reasons else None
+        manifest.last_source_id_seen     = fetch_meta.get("last_source_id_seen")
+        manifest.last_source_id_ingested = fetch_meta.get("last_source_id_ingested")
         manifest.status                  = "SUCCESS"
         manifest.completed_at            = datetime.utcnow()
+        telemetry = summarize_manifest_telemetry(
+            manifest,
+            schema_info=schema_info,
+            source_reachable=schema_info.get("connected", False),
+        )
+        manifest.telemetry_status = telemetry["status"]
+        manifest.telemetry_status_label = telemetry["label"]
+        manifest.telemetry_status_description = telemetry["description"]
         manifest.manifest_hash           = _compute_manifest_hash(manifest, previous_hash)
 
         highest = max((e.risk_score for e in new_events), default=0.0)
@@ -190,13 +239,23 @@ def run_ingestion_cycle(db: Session) -> dict:
             "status":          "SUCCESS",
             "manifest_hash":   manifest.manifest_hash,
             "source_hash":     source_batch_hash,
-            "gap_detected":    gap_detected,
+            "gap_detected":    raw_gap_detected,
+            "telemetry_status": manifest.telemetry_status,
         }
 
     except Exception as exc:
+        schema_info = inspect_schema(get_openemr_engine())
         manifest.status        = "FAILED"
         manifest.error_message = str(exc)
         manifest.completed_at  = datetime.utcnow()
+        telemetry = summarize_manifest_telemetry(
+            manifest,
+            schema_info=schema_info,
+            source_reachable=schema_info.get("connected", False),
+        )
+        manifest.telemetry_status = telemetry["status"]
+        manifest.telemetry_status_label = telemetry["label"]
+        manifest.telemetry_status_description = telemetry["description"]
         run.status             = "FAILED"
         run.error_message      = str(exc)
         db.commit()
@@ -285,20 +344,18 @@ def ingestion_status(
     last_success   = next((m for m in manifests if m.status == "SUCCESS"), None)
     gap_manifests  = [m for m in manifests if m.gap_detected]
     parser_errors  = sum(m.parse_error_count or 0 for m in manifests)
-
-    if not manifests:
-        overall = "UNKNOWN"
-    elif any(m.status == "FAILED" for m in manifests[:3]):
-        overall = "SOURCE_UNREACHABLE"
-    elif gap_manifests:
-        overall = "GAP_DETECTED"
-    elif parser_errors > 0:
-        overall = "PARSER_ERRORS"
-    else:
-        overall = "OK"
+    schema_info = inspect_schema(get_openemr_engine())
+    latest = manifests[0] if manifests else None
+    telemetry = summarize_manifest_telemetry(
+        latest,
+        schema_info=schema_info,
+        source_reachable=schema_info.get("connected", False),
+    )
 
     return {
-        "overall_status":     overall,
+        "overall_status":     telemetry["status"],
+        "overall_status_label": telemetry["label"],
+        "overall_status_description": telemetry["description"],
         "total_events_stored": total_events,
         "total_parse_errors":  total_errors,
         "last_success_hash":  last_success.manifest_hash if last_success else None,
@@ -310,12 +367,28 @@ def ingestion_status(
                 "completed_at":        m.completed_at.isoformat() if m.completed_at else None,
                 "status":              m.status,
                 "source_row_count":    m.source_row_count,
+                "source_rows_seen":    m.source_rows_seen,
                 "inserted_count":      m.inserted_count,
+                "rows_inserted":       m.rows_inserted,
                 "duplicate_count":     m.duplicate_count,
+                "rows_excluded_by_policy": m.rows_excluded_by_policy,
+                "rows_excluded_system_admin": m.rows_excluded_system_admin,
+                "rows_unsupported_event_type": m.rows_unsupported_event_type,
+                "rows_missing_required_fields": m.rows_missing_required_fields,
                 "parse_error_count":   m.parse_error_count,
                 "gap_detected":        m.gap_detected,
                 "gap_ranges":          m.gap_ranges_json,
+                "raw_source_gap_detected": m.raw_source_gap_detected,
+                "raw_source_gap_ranges": m.raw_source_gap_ranges_json,
+                "coverage_warning":    m.coverage_warning,
+                "coverage_warning_reason": m.coverage_warning_reason,
+                "last_source_id_seen": m.last_source_id_seen,
+                "last_source_id_ingested": m.last_source_id_ingested,
+                "telemetry_status":    m.telemetry_status,
+                "telemetry_status_label": m.telemetry_status_label,
+                "telemetry_status_description": m.telemetry_status_description,
                 "source_batch_sha256": m.source_batch_sha256,
+                "normalized_batch_sha256": m.normalized_batch_sha256,
                 "manifest_hash":       m.manifest_hash,
                 "error_message":       m.error_message,
             }

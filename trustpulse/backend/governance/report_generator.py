@@ -15,14 +15,14 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from case_lifecycle import is_active_case_status
 from db.models import (
-    NormalizedEvent, Case, ComplianceCalendarItem,
+    NormalizedEvent, Case,
     IngestionManifest,
 )
 from engine.compliance import (
     compute_compliance_health_score,
     compute_minimum_necessary,
-    seed_compliance_calendar,
 )
 
 CLINIC_NAME = os.environ.get("CLINIC_NAME", "Healthcare Clinic")
@@ -77,28 +77,20 @@ def _pill(text: str, bg: str, fg: str) -> str:
 def _status_pill(status: str) -> str:
     m = {
         "OPEN":          ("#FEE2E2", "#991B1B"),
+        "UNDER_REVIEW":  ("#DBEAFE", "#1D4ED8"),
+        "NEEDS_CONTEXT": ("#FEF3C7", "#92400E"),
         "ESCALATED":     ("#FFEDD5", "#9A3412"),
-        "REVIEWED":      ("#DCFCE7", "#166534"),
-        "DISMISSED":     ("#F1F5F9", "#475569"),
+        "RESOLVED":      ("#DCFCE7", "#166534"),
         "SUPPRESSED":    ("#F1F5F9", "#475569"),
         "FALSE_POSITIVE": ("#EEF2FF", "#3730A3"),
-    }
-    bg, fg = m.get(status, ("#F1F5F9", "#475569"))
-    return _pill(status, bg, fg)
-
-
-def _cal_pill(status: str) -> str:
-    m = {
-        "ON_TRACK": ("#DCFCE7", "#166534"),
-        "DUE_SOON": ("#FEF9C3", "#854D0E"),
-        "OVERDUE":  ("#FEE2E2", "#991B1B"),
+        "REOPENED":      ("#E0E7FF", "#4338CA"),
     }
     bg, fg = m.get(status, ("#F1F5F9", "#475569"))
     return _pill(status, bg, fg)
 
 
 def _build_recommendations(open_cases, critical_cases, breach_cases,
-                            health, calendar_items, min_nec) -> list:
+                            health, min_nec) -> list:
     recs = []
     if critical_cases:
         recs.append(
@@ -111,13 +103,6 @@ def _build_recommendations(open_cases, critical_cases, breach_cases,
             f"Conduct a formal breach risk assessment under 45 CFR §164.402 "
             f"to determine whether OCR notification may be required within 60 days of discovery."
         )
-    overdue_cal = [i for i in calendar_items if i.status == "OVERDUE"]
-    if overdue_cal:
-        names = ", ".join(i.item_type.replace("_", " ").title() for i in overdue_cal)
-        recs.append(
-            f"<b>HIPAA calendar items are overdue:</b> {names}. "
-            f"Schedule these immediately to avoid documentation gaps during an audit."
-        )
     action_users = [u for u in min_nec if u["status"] == "ACTION"]
     if action_users:
         recs.append(
@@ -128,19 +113,18 @@ def _build_recommendations(open_cases, critical_cases, breach_cases,
     if health["score"] < 70:
         recs.append(
             f"<b>Overall compliance health is {health['score']}/100 (Grade {health['grade']}).</b> "
-            f"Primary issue: {health['top_issue']}. Focus on closing open cases to improve this score."
+            f"Primary issue: {health['top_issue']}. Focus on closing active cases to improve this score."
         )
     stale = [c for c in open_cases
              if c.created_at and (datetime.utcnow() - c.created_at).days > 7]
     if stale:
         recs.append(
-            f"<b>{len(stale)} case(s) have been open for more than 7 days</b> without disposition. "
+            f"<b>{len(stale)} active case(s) have remained unresolved for more than 7 days</b> without disposition. "
             f"Dispose of these to maintain a clean audit queue."
         )
     if not recs:
         recs.append(
-            "No immediate actions required. Continue your regular audit review cadence and "
-            "ensure all HIPAA calendar items remain on schedule. Well done."
+            "No immediate actions required. Continue your regular audit review cadence. Well done."
         )
     return recs
 
@@ -166,14 +150,11 @@ def generate_periodic_report(
                      .filter(NormalizedEvent.event_time >= cutoff).count())
 
     all_cases     = (db.query(Case).filter(Case.created_at >= cutoff).all())
-    open_cases    = [c for c in all_cases if c.status == "OPEN"]
+    open_cases    = [c for c in all_cases if is_active_case_status(c.status)]
     critical_cases = [c for c in open_cases if c.severity == "P0_CRITICAL"]
     breach_cases  = [c for c in all_cases if c.breach_risk]
 
     health = compute_compliance_health_score(db)
-    seed_compliance_calendar(db)
-    calendar_items = (db.query(ComplianceCalendarItem)
-                      .order_by(ComplianceCalendarItem.next_due).all())
     min_nec = compute_minimum_necessary(db)
 
     hourly_raw = (
@@ -217,7 +198,7 @@ def generate_periodic_report(
     )
 
     recommendations = _build_recommendations(
-        open_cases, critical_cases, breach_cases, health, calendar_items, min_nec
+        open_cases, critical_cases, breach_cases, health, min_nec
     )
 
     # ── Assemble sections ──────────────────────────────────────────────────────
@@ -322,20 +303,6 @@ def generate_periodic_report(
         </tr>"""
     if not user_rows:
         user_rows = '<tr><td colspan="4" style="text-align:center;color:#94A3B8;padding:20px;">No activity in this period</td></tr>'
-
-    # Calendar table
-    cal_rows = ""
-    for item in calendar_items:
-        last = item.last_completed.strftime("%b %d, %Y") if item.last_completed else '<span style="color:#DC2626;font-weight:600;">Never recorded</span>'
-        nxt  = item.next_due.strftime("%b %d, %Y") if item.next_due else "-"
-        cal_rows += f"""
-        <tr>
-          <td style="font-weight:600;">{_s(item.item_type.replace("_", " ").title())}</td>
-          <td style="font-family:monospace;font-size:11px;color:#6366F1;">{_s(item.hipaa_provision)}</td>
-          <td>{last}</td>
-          <td>{nxt}</td>
-          <td>{_cal_pill(item.status)}</td>
-        </tr>"""
 
     # Minimum necessary table
     mn_rows = ""
@@ -474,7 +441,7 @@ def generate_periodic_report(
         <div class="kpi-sub">Last {period_days} days</div>
       </div>
       <div class="kpi">
-        <div class="kpi-lbl">Open Cases</div>
+        <div class="kpi-lbl">Active Cases</div>
         <div class="kpi-val" style="color:{'#DC2626' if open_cases else '#16A34A'};">{len(open_cases)}</div>
         <div class="kpi-sub">Requiring review</div>
       </div>
@@ -570,20 +537,9 @@ def generate_periodic_report(
   </div>
 </div>
 
-<!-- 7. Calendar -->
+<!-- 7. Minimum Necessary -->
 <div class="section">
-  <div class="sec-hdr">7 &mdash; HIPAA Compliance Calendar</div>
-  <div class="sec-body" style="padding:0;">
-    <table>
-      <thead><tr><th>Item</th><th>HIPAA Provision</th><th>Last Completed</th><th>Next Due</th><th>Status</th></tr></thead>
-      <tbody>{cal_rows}</tbody>
-    </table>
-  </div>
-</div>
-
-<!-- 8. Minimum Necessary -->
-<div class="section">
-  <div class="sec-hdr">8 &mdash; Minimum Necessary Access &mdash; §164.502(b)</div>
+  <div class="sec-hdr">7 &mdash; Minimum Necessary Access &mdash; §164.502(b)</div>
   <div class="sec-body" style="padding:0;">
     <div style="padding:12px 24px 12px;font-size:12px;color:#64748B;border-bottom:1px solid #F1F5F9;">
       Users with access ≥3× their peer average are flagged <b>ACTION</b>; 2&ndash;3× are <b>REVIEW</b>.
@@ -596,15 +552,15 @@ def generate_periodic_report(
   </div>
 </div>
 
-<!-- 9. Recommendations -->
+<!-- 8. Recommendations -->
 <div class="section">
-  <div class="sec-hdr">9 &mdash; Recommendations</div>
+  <div class="sec-hdr">8 &mdash; Recommendations</div>
   <div class="sec-body">{rec_html}</div>
 </div>
 
-<!-- 10. Integrity -->
+<!-- 9. Integrity -->
 <div class="section">
-  <div class="sec-hdr">10 &mdash; Report Integrity &amp; Provenance</div>
+  <div class="sec-hdr">9 &mdash; Report Integrity &amp; Provenance</div>
   <div class="sec-body" style="padding:0;">
     <table>
       <tr><td style="font-weight:600;width:220px;padding:12px 14px;">Report ID</td>

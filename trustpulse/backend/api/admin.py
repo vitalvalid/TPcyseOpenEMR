@@ -193,10 +193,37 @@ DEFAULT_SETTINGS = {
     "ingestion_interval_seconds": "60",
 }
 
+MIN_INGESTION_INTERVAL_SECONDS = 1
+MAX_INGESTION_INTERVAL_SECONDS = 3600
+
 
 def _get_setting(key: str, db: Session) -> str:
     row = db.get(PlatformSetting, key)
     return row.value if row else DEFAULT_SETTINGS.get(key, "")
+
+
+def get_effective_ingestion_interval_seconds(db: Session) -> int:
+    raw = _get_setting("ingestion_interval_seconds", db).strip()
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = int(DEFAULT_SETTINGS["ingestion_interval_seconds"])
+    return max(MIN_INGESTION_INTERVAL_SECONDS, min(MAX_INGESTION_INTERVAL_SECONDS, value))
+
+
+def _validate_setting_value(key: str, value: str) -> str:
+    if key != "ingestion_interval_seconds":
+        return value
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Ingestion interval must be a whole number of seconds")
+    if parsed < MIN_INGESTION_INTERVAL_SECONDS or parsed > MAX_INGESTION_INTERVAL_SECONDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ingestion interval must be between {MIN_INGESTION_INTERVAL_SECONDS} and {MAX_INGESTION_INTERVAL_SECONDS} seconds",
+        )
+    return str(parsed)
 
 
 @router.get("/settings")
@@ -230,6 +257,7 @@ def save_settings(
     for key, value in data.items():
         if key not in SETTING_KEYS:
             continue
+        value = _validate_setting_value(key, value)
         row = db.get(PlatformSetting, key)
         if row:
             row.value = value

@@ -2,6 +2,9 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from .models import Base
+from review_reasons import ensure_review_reason_schema
+from patient_access_review import ensure_case_review_schema
+from telemetry_health import ensure_ingestion_manifest_schema
 
 TRUSTPULSE_DB_URL           = os.environ.get("TRUSTPULSE_DB_URL", "sqlite:///./trustpulse.db")
 OPENEMR_DB_URL              = os.environ.get("OPENEMR_DB_URL", "")
@@ -17,6 +20,9 @@ TrustPulseSession = sessionmaker(bind=tp_engine, autocommit=False, autoflush=Fal
 
 def init_db():
     Base.metadata.create_all(bind=tp_engine)
+    ensure_review_reason_schema(tp_engine)
+    ensure_case_review_schema(tp_engine)
+    ensure_ingestion_manifest_schema(tp_engine)
 
 
 def get_tp_session():

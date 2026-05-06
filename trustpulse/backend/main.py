@@ -13,8 +13,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from db.session import init_db, get_openemr_engine, TrustPulseSession
+from review_reasons import seed_review_reasons
 from engine.baseline import compute_baselines, save_baselines
-from engine.case_engine import generate_cases
+from engine.case_engine import generate_cases, generate_auth_cases
 from engine.compliance import seed_compliance_calendar, save_trust_scores
 from api.auth import router as auth_router, bootstrap_admin, bootstrap_sample_users
 from api.system import router as system_router
@@ -24,10 +25,14 @@ from api.evidence import router as evidence_router
 from api.compliance_api import router as compliance_router
 from api.dashboard import router as dashboard_router
 from api.reports import router as reports_router, run_due_scheduled_reports
-from api.admin import router as admin_router, privacy_user_router
+from api.admin import (
+    router as admin_router,
+    privacy_user_router,
+    get_effective_ingestion_interval_seconds,
+)
 from api.users import router as users_router
 
-INGESTION_INTERVAL = int(os.environ.get("INGESTION_INTERVAL_SECONDS", "60"))
+DEFAULT_INGESTION_INTERVAL = int(os.environ.get("INGESTION_INTERVAL_SECONDS", "60"))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -100,27 +105,37 @@ def _rescore_events(db) -> int:
     return len(events)
 
 
+def _background_poll_sync() -> tuple[int, int]:
+    """Runs one ingestion+rescore cycle synchronously (called in a thread)."""
+    db = TrustPulseSession()
+    try:
+        interval_seconds = get_effective_ingestion_interval_seconds(db)
+        result = run_ingestion_cycle(db)
+        if result["events_ingested"] > 0:
+            log.info("Ingested %d events (manifest %s)",
+                     result["events_ingested"], result.get("manifest_hash", "")[:12])
+            baselines = compute_baselines(db)
+            save_baselines(db, baselines)
+            generate_cases(db)
+            generate_auth_cases(db)
+            _rescore_events(db)
+            save_trust_scores(db)
+        n_reports = run_due_scheduled_reports(db)
+        if n_reports:
+            log.info("Scheduled reports: ran %d report(s)", n_reports)
+        return interval_seconds, 0
+    except Exception as exc:
+        log.warning("Background poll error: %s", exc)
+        return DEFAULT_INGESTION_INTERVAL, 1
+    finally:
+        db.close()
+
+
 async def background_poller():
+    loop = asyncio.get_event_loop()
     while True:
-        await asyncio.sleep(INGESTION_INTERVAL)
-        db = TrustPulseSession()
-        try:
-            result = run_ingestion_cycle(db)
-            if result["events_ingested"] > 0:
-                log.info("Ingested %d events (manifest %s)",
-                         result["events_ingested"], result.get("manifest_hash", "")[:12])
-                baselines = compute_baselines(db)
-                save_baselines(db, baselines)
-                _rescore_events(db)
-                generate_cases(db)
-                save_trust_scores(db)
-            n_reports = run_due_scheduled_reports(db)
-            if n_reports:
-                log.info("Scheduled reports: ran %d report(s)", n_reports)
-        except Exception as exc:
-            log.warning("Background poll error: %s", exc)
-        finally:
-            db.close()
+        interval_seconds, _ = await loop.run_in_executor(None, _background_poll_sync)
+        await asyncio.sleep(interval_seconds)
 
 
 @asynccontextmanager
@@ -133,6 +148,7 @@ async def lifespan(app: FastAPI):
     try:
         bootstrap_admin(db)
         bootstrap_sample_users(db)
+        seed_review_reasons(db)
 
         engine = get_openemr_engine()
         if engine:
@@ -156,7 +172,8 @@ async def lifespan(app: FastAPI):
         log.info("Baselines computed for %d users", len(baselines))
 
         n_cases = generate_cases(db)
-        log.info("Case engine: %d new cases", n_cases)
+        n_auth_cases = generate_auth_cases(db)
+        log.info("Case engine: %d new patient-access cases, %d new auth cases", n_cases, n_auth_cases)
 
         save_trust_scores(db)
         seed_compliance_calendar(db)
@@ -167,21 +184,27 @@ async def lifespan(app: FastAPI):
         db.close()
 
     task = asyncio.create_task(background_poller())
-    async def _deferred_rescore():
-        await asyncio.sleep(5)
+    def _deferred_rescore_sync():
         _db = TrustPulseSession()
         try:
             baselines = compute_baselines(_db)
             save_baselines(_db, baselines)
             n = _rescore_events(_db)
             generate_cases(_db)
+            generate_auth_cases(_db)
             log.info("Deferred rescore complete: %d events rescored", n)
         except Exception as exc:
             log.warning("Deferred rescore error: %s", exc)
         finally:
             _db.close()
+
+    async def _deferred_rescore():
+        await asyncio.sleep(5)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _deferred_rescore_sync)
+
     asyncio.create_task(_deferred_rescore())
-    log.info("Background poller started (interval=%ds)", INGESTION_INTERVAL)
+    log.info("Background poller started (default interval=%ds)", DEFAULT_INGESTION_INTERVAL)
     yield
     task.cancel()
     log.info("TrustPulse v3 shutting down")

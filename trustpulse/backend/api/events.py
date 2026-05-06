@@ -5,6 +5,8 @@ from sqlalchemy import and_
 
 from db.models import NormalizedEvent
 from db.session import get_tp_session
+from engine.event_classification import AUTHENTICATION_EVENT_TYPES
+from api.auth import require_permission, TrustPulseUser
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -41,6 +43,7 @@ def list_events(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_tp_session),
+    _user: TrustPulseUser = Depends(require_permission("review")),
 ):
     q = db.query(NormalizedEvent)
 
@@ -65,8 +68,48 @@ def list_events(
     return {"total": total, "page": page, "page_size": page_size, "events": [event_to_dict(e) for e in events]}
 
 
+@router.get("/debug/auth")
+def debug_auth_events(
+    username: Optional[str] = Query(None),
+    limit: int = Query(25, ge=1, le=100),
+    db: Session = Depends(get_tp_session),
+    _user: TrustPulseUser = Depends(require_permission("review")),
+):
+    if not isinstance(limit, int):
+        limit = getattr(limit, "default", 25) or 25
+    q = db.query(NormalizedEvent).filter(
+        NormalizedEvent.event_type.in_(list(AUTHENTICATION_EVENT_TYPES))
+    )
+    if username:
+        q = q.filter(
+            (NormalizedEvent.user_id == username) |
+            (NormalizedEvent.user_name == username)
+        )
+    rows = (
+        q.order_by(NormalizedEvent.event_time.desc(), NormalizedEvent.source_log_id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "username_filter": username,
+        "count": len(rows),
+        "events": [
+            {
+                **event_to_dict(row),
+                "source_username": row.user_id,
+                "normalized_category": "AUTHENTICATION_EVENT",
+            }
+            for row in rows
+        ],
+    }
+
+
 @router.get("/{event_id}")
-def get_event(event_id: int, db: Session = Depends(get_tp_session)):
+def get_event(
+    event_id: int,
+    db: Session = Depends(get_tp_session),
+    _user: TrustPulseUser = Depends(require_permission("review")),
+):
     from fastapi import HTTPException
     from db.models import Disposition
 

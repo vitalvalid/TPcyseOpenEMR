@@ -86,6 +86,11 @@ class TestGapDetection:
         assert gap is False
         assert ranges == []
 
+    def test_first_ingestion_does_not_flag_initial_offset_as_gap(self):
+        gap, ranges = _detect_gaps(0, [105, 106, 107], is_first_ingestion=True)
+        assert gap is False
+        assert ranges == []
+
 
 class TestNormalizer:
     def test_no_events_returns_empty(self, db):

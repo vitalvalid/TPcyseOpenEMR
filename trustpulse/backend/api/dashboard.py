@@ -10,6 +10,7 @@ from sqlalchemy import func
 
 from db.models import Case, NormalizedEvent, ComplianceCalendarItem
 from db.session import get_tp_session
+from case_lifecycle import ACTIVE_CASE_STATUSES
 from engine.compliance import (
     compute_compliance_health_score,
     compute_minimum_necessary,
@@ -41,7 +42,7 @@ def dashboard(
     open_cases = (
         db.query(Case)
         .filter(
-            Case.status == "OPEN",
+            Case.status.in_(ACTIVE_CASE_STATUSES),
             (Case.snoozed_until == None) | (Case.snoozed_until <= now),
         )
         .order_by(Case.risk_score.desc())
@@ -57,6 +58,7 @@ def dashboard(
             "title": c.title,
             "severity": c.severity,
             "pattern_type": c.pattern_type,
+            "case_type": getattr(c, "case_type", None) or "GENERIC_REVIEW",
             "user_id": c.user_id,
             "user_name": c.user_name,
             "event_count": c.event_count,
@@ -69,7 +71,11 @@ def dashboard(
 
     today_cases = [_brief(c) for c in today_cases_raw]
     remaining_p1 = max(0, len(p1) - 2)
-    remaining_p2 = db.query(Case).filter(Case.status == "OPEN", Case.severity == "P2_MEDIUM").count()
+    remaining_p2 = (
+        db.query(Case)
+        .filter(Case.status.in_(ACTIVE_CASE_STATUSES), Case.severity == "P2_MEDIUM")
+        .count()
+    )
 
     # All clear
     all_clear = len(p0) == 0 and len(p1) == 0
@@ -104,7 +110,7 @@ def dashboard(
     # Breach countdowns
     breach_cases = (
         db.query(Case)
-        .filter(Case.breach_deadline.isnot(None), Case.status.in_(["OPEN", "ESCALATED"]))
+        .filter(Case.breach_deadline.isnot(None), Case.status.in_(ACTIVE_CASE_STATUSES))
         .order_by(Case.breach_deadline.asc())
         .limit(5)
         .all()

@@ -7,12 +7,16 @@ from sqlalchemy import func
 
 from db.models import NormalizedEvent, IngestionRun
 from db.session import get_tp_session
+from api.auth import require_permission, TrustPulseUser
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 
 @router.get("/summary")
-def summary(db: Session = Depends(get_tp_session)):
+def summary(
+    db: Session = Depends(get_tp_session),
+    _user: TrustPulseUser = Depends(require_permission("review")),
+):
     today = datetime.utcnow().date()
     today_start = datetime(today.year, today.month, today.day)
 

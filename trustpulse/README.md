@@ -1,8 +1,10 @@
 # TrustPulse
 
-TrustPulse is a healthcare audit governance tool that connects to OpenEMR, ingests audit activity, detects risky access patterns, and creates review cases for compliance workflows.
+TrustPulse is an OpenEMR-specific compliance-review workflow for small to midsize clinics and hospitals. It ingests OpenEMR-derived audit activity, creates patient-access and authentication/account review cases, and helps reviewers document justification, request context, escalate when needed, and export evidence packages.
 
-It does not modify OpenEMR source code. It reads OpenEMR data through a read-only database connector and builds cases inside TrustPulse.
+It does not modify OpenEMR source code. It reads OpenEMR through a read-only database connector and builds review cases inside TrustPulse.
+
+TrustPulse is designed to support human review. It is not a SIEM replacement, not an automatic HIPAA violation detector, and not a breach-determination engine.
 
 This project is a course project for Cybersecurity Systems Engineering and is intended for lab/demo use only.
 
@@ -20,6 +22,10 @@ This project is a course project for Cybersecurity Systems Engineering and is in
 - Generates review cases for compliance staff
 - Tracks reviewer actions with tamper-evident hashes
 - Supports evidence export and governance reporting
+
+## Demo Guide
+
+For a clean demo script, reproducible scenarios, and reset instructions, see [DEMO.md](/home/sagarbh/Desktop/cyseOpenEMR/trustpulse/DEMO.md:1).
 
 ## Quick Start
 
@@ -109,6 +115,19 @@ After ingestion, TrustPulse will:
 - store normalized audit events
 - create or update cases in the case queue
 
+## Inspecting Case Linkage
+
+To verify Phase 1 case-to-event linkage from inside the TrustPulse container:
+
+```bash
+docker exec -it trustpulse_app python tools/inspect_case_links.py
+docker exec -it trustpulse_app python tools/inspect_case_links.py --title "David Ross"
+docker exec -it trustpulse_app python tools/inspect_case_links.py --case-prefix e5cb8ae1
+```
+
+The command uses `TRUSTPULSE_DB_URL` when it is set. Otherwise it defaults to `/app/data/trustpulse.db`.
+Patient IDs are never printed directly; the tool shows tokenized values when the tokenizer is available.
+
 ## Why Event Counts May Not Increase
 
 If TrustPulse ingested event counts do not increase, the usual causes are:
@@ -145,6 +164,8 @@ To also remove stored data:
 docker compose down -v
 docker compose -f trustpulse/docker-compose.yml down -v
 ```
+
+Warning: this demo reset deletes local TrustPulse and OpenEMR data volumes.
 
 ## More Details
 

@@ -5,10 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 
+from case_lifecycle import ACTIVE_CASE_STATUSES
 from db.models import NormalizedEvent, UserBaseline, UserTrustScore, Case
 from db.session import get_tp_session, get_openemr_engine
 from engine.compliance import compute_peer_comparison, compute_user_trust_score
 from ingestion.connectors.openemr_real import ROLE_MAP, SKIP_USERNAMES
+from api.auth import require_permission, TrustPulseUser
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -55,7 +57,10 @@ def _openemr_roster() -> dict:
 
 
 @router.get("")
-def list_users(db: Session = Depends(get_tp_session)):
+def list_users(
+    db: Session = Depends(get_tp_session),
+    _user: TrustPulseUser = Depends(require_permission("review")),
+):
     # Base roster from OpenEMR (all active accounts, even with no events yet)
     roster = _openemr_roster()
 
@@ -99,8 +104,8 @@ def list_users(db: Session = Depends(get_tp_session)):
         )
         ts = db.get(UserTrustScore, uid)
         score = ts.trust_score if ts else compute_user_trust_score(uid, db)
-        open_cases = db.query(Case).filter(
-            Case.user_id == uid, Case.status == "OPEN"
+        active_cases = db.query(Case).filter(
+            Case.user_id == uid, Case.status.in_(ACTIVE_CASE_STATUSES)
         ).count()
         result.append({
             "user_id": uid,
@@ -111,7 +116,8 @@ def list_users(db: Session = Depends(get_tp_session)):
             "total_events": total_events,
             "trust_score": score,
             "trust_shield": _shield(score),
-            "open_cases": open_cases,
+            "open_cases": active_cases,
+            "active_cases": active_cases,
         })
 
     # Add OpenEMR users who have no events yet
@@ -128,13 +134,18 @@ def list_users(db: Session = Depends(get_tp_session)):
             "trust_score": 100.0,
             "trust_shield": _shield(100.0),
             "open_cases": 0,
+            "active_cases": 0,
         })
 
     return sorted(result, key=lambda x: x["trust_score"])
 
 
 @router.get("/{user_id}/timeline")
-def user_timeline(user_id: str, db: Session = Depends(get_tp_session)):
+def user_timeline(
+    user_id: str,
+    db: Session = Depends(get_tp_session),
+    _user: TrustPulseUser = Depends(require_permission("review")),
+):
     events = (
         db.query(NormalizedEvent)
         .filter(NormalizedEvent.user_id == user_id)
@@ -169,7 +180,9 @@ def user_timeline(user_id: str, db: Session = Depends(get_tp_session)):
     trust_score = ts.trust_score if ts else compute_user_trust_score(user_id, db)
     peer = compute_peer_comparison(user_id, db)
     open_cases = (
-        db.query(Case).filter(Case.user_id == user_id, Case.status == "OPEN").all()
+        db.query(Case)
+        .filter(Case.user_id == user_id, Case.status.in_(ACTIVE_CASE_STATUSES))
+        .all()
     )
 
     # Daily stats
@@ -242,5 +255,9 @@ def user_timeline(user_id: str, db: Session = Depends(get_tp_session)):
 
 
 @router.get("/{user_id}/peer_comparison")
-def peer_comparison(user_id: str, db: Session = Depends(get_tp_session)):
+def peer_comparison(
+    user_id: str,
+    db: Session = Depends(get_tp_session),
+    _user: TrustPulseUser = Depends(require_permission("review")),
+):
     return compute_peer_comparison(user_id, db)

@@ -16,7 +16,7 @@ from ingestion.connectors.openemr_real import (
 
 def fetch_new_logs(last_ingested_id: int = 0, limit: int = 5000) -> tuple:
     """
-    Returns (events, parse_errors).
+    Returns (events, parse_errors, fetch_metadata).
     Raises RuntimeError if OPENEMR_DB_URL is not configured or DB is unreachable.
     """
     engine = get_openemr_engine()

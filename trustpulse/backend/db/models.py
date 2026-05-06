@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text,
-    ForeignKey, JSON, Boolean, BigInteger,
+    ForeignKey, JSON, Boolean, BigInteger, UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base
 
@@ -17,11 +17,17 @@ class IngestionManifest(Base):
     connector_name           = Column(String(50), nullable=False)
     source_system            = Column(String(50), nullable=False, default="openemr")
     source_name              = Column(String(200))
+    source_rows_seen         = Column(Integer, default=0)
+    rows_inserted            = Column(Integer, default=0)
     source_min_id            = Column(BigInteger)
     source_max_id            = Column(BigInteger)
     source_row_count         = Column(Integer, default=0)
     inserted_count           = Column(Integer, default=0)
     duplicate_count          = Column(Integer, default=0)
+    rows_excluded_by_policy  = Column(Integer, default=0)
+    rows_excluded_system_admin = Column(Integer, default=0)
+    rows_unsupported_event_type = Column(Integer, default=0)
+    rows_missing_required_fields = Column(Integer, default=0)
     parse_error_count        = Column(Integer, default=0)
     source_batch_sha256      = Column(String(64))
     normalized_batch_sha256  = Column(String(64))
@@ -29,6 +35,15 @@ class IngestionManifest(Base):
     manifest_hash            = Column(String(64))
     gap_detected             = Column(Boolean, default=False)
     gap_ranges_json          = Column(JSON)
+    raw_source_gap_detected  = Column(Boolean, default=False)
+    raw_source_gap_ranges_json = Column(JSON)
+    coverage_warning         = Column(Boolean, default=False)
+    coverage_warning_reason  = Column(Text, nullable=True)
+    last_source_id_seen      = Column(BigInteger, nullable=True)
+    last_source_id_ingested  = Column(BigInteger, nullable=True)
+    telemetry_status         = Column(String(50), nullable=True)
+    telemetry_status_label   = Column(String(100), nullable=True)
+    telemetry_status_description = Column(Text, nullable=True)
     started_at               = Column(DateTime, default=datetime.utcnow)
     completed_at             = Column(DateTime, nullable=True)
     status                   = Column(String(20), default="IN_PROGRESS")
@@ -151,6 +166,7 @@ class Case(Base):
     title               = Column(String(200))
     severity            = Column(String(20), index=True)
     pattern_type        = Column(String(50))
+    case_type           = Column(String(50), default="GENERIC_REVIEW", index=True)
     user_id             = Column(String(50), index=True)
     user_name           = Column(String(100))
     event_count         = Column(Integer, default=0)
@@ -168,6 +184,12 @@ class Case(Base):
     created_at          = Column(DateTime, default=datetime.utcnow)
     resolved_at         = Column(DateTime, nullable=True)
     is_demo             = Column(Boolean, default=False)
+    assessment_json     = Column(JSON, nullable=True)
+    escalated_to_role   = Column(String(100), nullable=True)
+    escalated_to_email  = Column(String(200), nullable=True)
+    escalated_at        = Column(DateTime, nullable=True)
+    escalation_reason   = Column(Text, nullable=True)
+    escalation_due_at   = Column(DateTime, nullable=True)
 
 
 class CaseAction(Base):
@@ -183,12 +205,58 @@ class CaseAction(Base):
     previous_status = Column(String(20))
     new_status      = Column(String(20))
     reason_code     = Column(String(50))
+    reason_label_snapshot = Column(String(200))
     notes           = Column(Text)
     source_ip       = Column(String(45))
     user_agent      = Column(String(500))
     created_at      = Column(DateTime, default=datetime.utcnow)
     previous_hash   = Column(String(64), nullable=False, default="0" * 64)
     record_hash     = Column(String(64))
+
+
+class ReviewReason(Base):
+    __tablename__ = "review_reasons"
+
+    code               = Column(String(100), primary_key=True)
+    label              = Column(String(200), nullable=False)
+    category           = Column(String(50), nullable=False)
+    applies_to_actions = Column(JSON, default=list)
+    requires_note      = Column(Boolean, default=False)
+    is_active          = Column(Boolean, default=True)
+    created_at         = Column(DateTime, default=datetime.utcnow)
+
+
+class ContextRequest(Base):
+    __tablename__ = "context_requests"
+
+    id                   = Column(Integer, primary_key=True, index=True)
+    case_id              = Column(String(36), ForeignKey("cases.case_id"), nullable=False, index=True)
+    requested_by_user_id = Column(String(50), nullable=False)
+    requested_by_email   = Column(String(200), nullable=False)
+    requested_from_role  = Column(String(100), nullable=False)
+    requested_from_email = Column(String(200), nullable=True)
+    question             = Column(Text, nullable=False)
+    due_at               = Column(DateTime, nullable=True)
+    status               = Column(String(20), default="PENDING", index=True)
+    response_text        = Column(Text, nullable=True)
+    responded_by_email   = Column(String(200), nullable=True)
+    responded_at         = Column(DateTime, nullable=True)
+    created_at           = Column(DateTime, default=datetime.utcnow)
+    recommendation_provenance = Column(JSON, nullable=True)
+
+
+class CaseEvent(Base):
+    __tablename__ = "case_events"
+    __table_args__ = (
+        UniqueConstraint("case_id", "normalized_event_id", name="uq_case_event_case_event"),
+    )
+
+    id                  = Column(Integer, primary_key=True, index=True)
+    case_id             = Column(String(36), ForeignKey("cases.case_id"), nullable=False, index=True)
+    normalized_event_id = Column(Integer, ForeignKey("normalized_events.id"), nullable=False, index=True)
+    linked_reason       = Column(String(100), nullable=False)
+    rule_id             = Column(String(20), nullable=True)
+    created_at          = Column(DateTime, default=datetime.utcnow)
 
 
 class BreachAssessment(Base):

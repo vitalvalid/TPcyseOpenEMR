@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from db.session import get_tp_session
 from governance.store import create_disposition
+from api.auth import require_permission, TrustPulseUser
 
 router = APIRouter(prefix="/api/dispositions", tags=["dispositions"])
 
@@ -16,7 +17,11 @@ class DispositionRequest(BaseModel):
 
 
 @router.post("")
-def submit_disposition(req: DispositionRequest, db: Session = Depends(get_tp_session)):
+def submit_disposition(
+    req: DispositionRequest,
+    db: Session = Depends(get_tp_session),
+    _user: TrustPulseUser = Depends(require_permission("disposition")),
+):
     try:
         disp = create_disposition(db, req.event_id, req.reviewer, req.action, req.notes)
     except ValueError as e:

@@ -9,6 +9,7 @@ import numpy as np
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from case_lifecycle import ACTIVE_CASE_STATUSES
 from db.models import (
     Case, NormalizedEvent, IngestionRun,
     KnownPattern, UserTrustScore, ComplianceCalendarItem,
@@ -24,7 +25,7 @@ def compute_compliance_health_score(db: Session) -> dict:
     total_cases = db.query(Case).filter(Case.created_at >= cutoff).count()
     reviewed = db.query(Case).filter(
         Case.created_at >= cutoff,
-        Case.status.in_(["RESOLVED", "DISMISSED", "FALSE_POSITIVE"]),
+        Case.status.in_(["RESOLVED", "FALSE_POSITIVE", "SUPPRESSED"]),
     ).count()
     review_rate = (reviewed / total_cases * 100) if total_cases > 0 else 100.0
 
@@ -44,7 +45,7 @@ def compute_compliance_health_score(db: Session) -> dict:
 
     # 3. Open P0 Cases (25%) - any open P0 caps overall score at 40
     open_p0 = db.query(Case).filter(
-        Case.status == "OPEN", Case.severity == "P0_CRITICAL"
+        Case.status.in_(ACTIVE_CASE_STATUSES), Case.severity == "P0_CRITICAL"
     ).count()
     p0_score = 0.0 if open_p0 > 0 else 100.0
 
@@ -89,7 +90,7 @@ def compute_compliance_health_score(db: Session) -> dict:
     if open_p0:
         issues.append(f"{open_p0} critical case(s) unresolved")
     stale = db.query(Case).filter(
-        Case.status == "OPEN",
+        Case.status.in_(ACTIVE_CASE_STATUSES),
         Case.created_at <= datetime.utcnow() - timedelta(days=7),
     ).count()
     if stale:

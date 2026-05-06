@@ -23,6 +23,16 @@ BUSINESS_HOURS_END   = 19
 
 
 def r01_after_hours(event: dict, baseline: Optional[dict], context: dict) -> RuleResult:
+    from engine.event_classification import is_auth_event
+    if is_auth_event(event.get("event_type", "")):
+        return RuleResult(
+            rule_id="R-01", rule_name="After-Hours Access",
+            fired=False, score_contribution=0.0,
+            description="Not evaluated for authentication events",
+            hipaa_ref="HIPAA 45 CFR §164.312(a)(2)(i)",
+            not_evaluated=True,
+            not_evaluated_reason="Rule R-01 applies to patient-access events only. Authentication events are handled by the auth case engine.",
+        )
     hour  = event.get("hour_of_day", 12)
     fired = hour < BUSINESS_HOURS_START or hour >= BUSINESS_HOURS_END
     return RuleResult(

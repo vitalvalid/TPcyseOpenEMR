@@ -22,7 +22,7 @@ from db.session import get_tp_session, TRUSTPULSE_JWT_SECRET
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-_pwd_ctx  = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_pwd_ctx  = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=6)
 _bearer   = HTTPBearer(auto_error=False)
 _ALGO     = "HS256"
 _EXP_HRS  = 8
